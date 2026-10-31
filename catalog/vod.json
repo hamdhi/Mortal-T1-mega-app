@@ -1,0 +1,54 @@
+[
+  {
+    "id": "sita-sings-the-blues",
+    "title": "Sita Sings the Blues",
+    "url": "https://archive.org/download/Sita_Sings_the_Blues/Sita_Sings_the_Blues.mp4",
+    "year": 2008,
+    "minutes": 82,
+    "category": "Animated feature",
+    "description": "Nina Paley's animated musical retelling of the Ramayana alongside a modern relationship story. English. Complete feature film.",
+    "credit": "Nina Paley — www.sitasingstheblues.com",
+    "license": "Free viewing and downloads offered by the filmmaker. See the creator's site for rights and credits.",
+    "sourceUrl": "https://www.sitasingstheblues.com/watch.html",
+    "verified": "2026-11-01"
+  },
+  {
+    "id": "seder-masochism",
+    "title": "Seder-Masochism",
+    "url": "https://archive.org/download/sedermasochism/Seder-Masochism%20final%2005-18-18.mp4",
+    "year": 2018,
+    "minutes": 78,
+    "category": "Animated feature",
+    "description": "Nina Paley's feature-length animated musical interpretation of the Passover Seder. English. Complete film.",
+    "credit": "Nina Paley — Pale Gray Labs",
+    "license": "Free download offered by the filmmaker; see the creator's download page.",
+    "sourceUrl": "https://sedermasochism.com/download/",
+    "verified": "2026-11-01"
+  },
+  {
+    "id": "sintel",
+    "title": "Sintel",
+    "url": "https://download.blender.org/durian/movies/Sintel.2010.1080p.mkv",
+    "year": 2010,
+    "minutes": 15,
+    "category": "Fantasy short",
+    "description": "A young woman searches for the dragon she befriended. English. Complete short film; 1080p, device codec support required.",
+    "credit": "Blender Foundation — Durian Open Movie Project",
+    "license": "Creative Commons Attribution 3.0. https://creativecommons.org/licenses/by/3.0/",
+    "sourceUrl": "https://durian.blender.org/download/",
+    "verified": "2026-11-01"
+  },
+  {
+    "id": "big-buck-bunny",
+    "title": "Big Buck Bunny",
+    "url": "https://storage.googleapis.com/exoplayer-test-media-0/BigBuckBunny_320x180.mp4",
+    "year": 2008,
+    "minutes": 10,
+    "category": "Comedy short",
+    "description": "A gentle rabbit stands up to three mischievous forest animals. Complete short film. SD playback copy hosted by the Android ExoPlayer project.",
+    "credit": "Copyright 2008 Blender Foundation — www.bigbuckbunny.org",
+    "license": "Creative Commons Attribution 3.0. https://creativecommons.org/licenses/by/3.0/",
+    "sourceUrl": "https://peach.blender.org/about/",
+    "verified": "2026-11-01"
+  }
+]

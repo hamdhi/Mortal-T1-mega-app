@@ -32,7 +32,8 @@ object Network {
         }
         error("Too many redirects")
     }
-    fun import(store: Store, name: String, value: String, kind: String): String {
+    fun import(store: Store, name: String, value: String, kind: String, target: String = "live"): String {
+        require(target in setOf("live", "vod")) { "Choose Live TV or VOD" }
         val source = name.trim().ifBlank { "My playlist" }
         val url = value.trim()
         val result = when (kind) {
@@ -40,7 +41,7 @@ object Network {
             "text" -> Playlist.parse(value, source = source)
             else -> { require(Playlist.safeUrl(url)); Playlist.parse(read(url), url, source) }
         }
-        store.importChannels(source, if (kind == "playlist") url else "", result.channels)
+        store.importChannels(source, if (kind == "playlist") url else "", result.channels, target)
         return "Imported ${result.channels.size} channels • skipped ${result.skipped} invalid entries"
     }
 }

@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
     private var refreshing = false
     private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val epg by lazy { Epg(this) }
+    private val vod by lazy { VodCatalog(this) }
     private val timedRefresh = object : Runnable { override fun run() { if (prefs.getBoolean("autoRefresh", false)) refreshSources(); refreshHandler.postDelayed(this, 6 * 3600000L) } }
     private data class Card(val id: String, val title: String, val subtitle: String, val badge: String, val logo: String = "", val action: () -> Unit)
     override fun onCreate(state: Bundle?) {
@@ -44,8 +45,8 @@ class MainActivity : ComponentActivity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Ui.bg); setPadding(d(24), d(24), d(24), d(20)) }
         val nav = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, d(22), 0) }
         nav.addView(Ui.label(this, "M / MORTAL", 22f, Ui.accent)); nav.addView(Ui.label(this, "YOUR TV, SIMPLIFIED", 10f, Ui.muted))
-        listOf("Home", "Channels", "Sri Lankan TV", "Favorites", "Recent", "Others", "Settings").forEach { name ->
-            nav.addView(Ui.button(this, name) { page = name; query = ""; group = "All groups"; sourceFilter = "All sources"; savedState = null; focusId = ""; search.setText(""); render() }, LinearLayout.LayoutParams(d(168), d(46)).apply { topMargin = d(7) })
+        listOf("Home", "Channels", "VOD", "Free Movies", "Sri Lankan TV", "Favorites", "Recent", "Others", "Settings").forEach { name ->
+            nav.addView(Ui.button(this, name) { page = name; query = ""; group = "All groups"; sourceFilter = "All sources"; savedState = null; focusId = ""; search.setText(""); render() }, LinearLayout.LayoutParams(d(168), d(39)).apply { topMargin = d(3) })
         }
         nav.addView(Ui.label(this, "LOCAL. PERSONAL. FAST.\nv${BuildConfig.VERSION_NAME}", 10f, Ui.muted))
         root.addView(nav, LinearLayout.LayoutParams(d(194), -1))
@@ -76,12 +77,14 @@ class MainActivity : ComponentActivity() {
     override fun onResume() { super.onResume(); if (::grid.isInitialized) { render(); savedState?.let { grid.layoutManager?.onRestoreInstanceState(it) } } }
     private fun d(n: Int) = Ui.dp(this, n)
     private fun render() {
-        heading.text = when (page) { "Home" -> "Make yourself at home."; "Channels" -> "Your channels"; "Recent" -> "Pick up where you left off"; "Settings" -> "Settle in. Set it up."; else -> page }
+        heading.text = when (page) { "Home" -> "Make yourself at home."; "Channels" -> "Your channels"; "Free Movies" -> "Free movie channels"; "Recent" -> "Pick up where you left off"; "Settings" -> "Settle in. Set it up."; else -> page }
         subtitle.text = when (page) {
-            "Home" -> "${store.channels().size} channels   /   ${store.sources().size} sources   /   One remote"
+            "Home" -> "${store.channels().count { it.kind == "live" }} TV channels   /   ${store.channels().count { it.kind == "vod" } + vod.entries().size} films   /   One remote"
             "Settings" -> "Manage your TV, connect a computer, and keep everything up to date."
             "Sri Lankan TV" -> "Official broadcaster pages + your imported Sri Lankan channels. Availability varies."
             "Others" -> "Your web, one click away. Select a card to open it. Menu opens link actions."
+            "VOD" -> "Complete free films + your movie library. Select a title for details and resume playback."
+            "Free Movies" -> "Official free services + your movie channels. Ads and regional availability apply."
             else -> "Select a channel for playback options. D-pad to browse · Back to return."
         }
         search.visibility = if (page == "Settings") View.GONE else View.VISIBLE
@@ -97,21 +100,28 @@ class MainActivity : ComponentActivity() {
             Card("file", "Import playlist file", "Choose an M3U from USB or device storage", "+") { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 101) },
             Card("external", "Default player", if (prefs.getBoolean("external", false)) "External player" else "Built-in Media3 player", "▶") { prefs.edit().putBoolean("external", !prefs.getBoolean("external", false)).apply(); render() },
             Card("catalog", "Sri Lankan catalog", "Refresh a versioned catalog URL", "LK") { catalogDialog() },
+            Card("vodcatalog", "Refresh free movie catalog", "Creator-authorized films · cached for offline browsing", "VOD") { background("Refreshing movie catalog…") { val n = vod.refresh(VodCatalog.DEFAULT_URL); runOnUiThread { render() }; "$n films in catalog" } },
             Card("guide", "Programme guide", "XMLTV now / next · matches playlist tvg-id", "EPG") { form("XMLTV guide", listOf("XMLTV URL (plain XML, max 8 MB)" to prefs.getString("epg", "").orEmpty())) { v -> background("Refreshing guide…") { val n = epg.refresh(v[0]); prefs.edit().putString("epg", v[0]).apply(); runOnUiThread { render() }; "$n programmes loaded" } } },
             Card("auto", "Automatic source refresh", if (prefs.getBoolean("autoRefresh", false)) "Every 6 hours while app is running" else "Off · manual refresh available", "↺") { prefs.edit().putBoolean("autoRefresh", !prefs.getBoolean("autoRefresh", false)).apply(); render() },
             Card("cache", "Clear image cache", "Keep playlists, favorites and links", "×") { Network.io.execute { Logos.clearMemory(); cacheDir.resolve("logos").deleteRecursively(); runOnUiThread { toast("Image cache cleared") } } },
             Card("about", "About Mortal TV", "Native Kotlin · Built for a remote", "M") { message("Mortal TV", "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nNo accounts or subscription required.\n\nHTTP streams and the PC manager use unencrypted connections. Use trusted sources and a trusted LAN.\n\nCodec, stream availability, and launcher support depend on your device. Live streams without a DVR window cannot seek.") }
         )
-        val all = store.channels()
+        val all = store.channels() + vod.entries().map { it.channel() }
         val selected = when (page) {
             "Favorites" -> all.filter { it.id in store.favorites() }
             "Recent" -> store.history().mapNotNull { id -> all.find { it.id == id } }
             "Home" -> (store.history().take(6).mapNotNull { id -> all.find { it.id == id } } + all.filter { it.id in store.favorites() }).distinctBy { it.id }.take(12)
             "Sri Lankan TV" -> all.filter { it.source == "Sri Lankan TV" || it.group.contains("Sri Lanka", true) }
+            "VOD" -> all.filter { it.kind == "vod" }
+            "Free Movies" -> all.filter { it.kind == "live" && it.group.contains("movie", true) }
             "Others" -> emptyList()
-            else -> all
+            else -> all.filter { it.kind == "live" }
         }.filter { (sourceFilter == "All sources" || it.source == sourceFilter) && (group == "All groups" || group in it.group.split(';')) && (it.name.contains(query, true) || it.group.contains(query, true)) }.let { if (page == "Channels") it.sortedBy { c -> c.name.lowercase(Locale.ROOT) } else it }
-        val results = selected.map { c -> Card(c.id, c.name, epg.nowNext(c.tvgId).ifBlank { c.group + " · " + c.source }, if (c.id in store.favorites()) "★" else "LIVE", c.logo) { channelDialog(c) } }.toMutableList()
+        val results = selected.map { c ->
+            val movie = vod.entries().find { "vod:${it.id}" == c.id }
+            Card(c.id, c.name, movie?.let { "${it.year} · ${it.minutes} min · ${it.category}" } ?: epg.nowNext(c.tvgId).ifBlank { c.group + " · " + c.source }, if (c.id in store.favorites()) "★" else if (c.kind == "vod") "FILM" else "LIVE", c.logo) { if (movie != null) movieDialog(movie) else channelDialog(c) }
+        }.toMutableList()
+        if (page == "Free Movies") results += freeMovieCards().filter { it.title.contains(query, true) }
         if (page == "Others" || page == "Home") results += store.links().filter { (page == "Others" || it.home) && it.name.contains(query, true) }.map { l -> Card(l.id, l.name, "Web shortcut" + if (l.home) " · Home" else "", "↗") { openLink(l.url, false) } }
         if (page == "Sri Lankan TV") results += listOf(
             Card("itn", "ITN", "Official live page · opens browser", "LK") { openLink("https://itn.lk/live/", false) },
@@ -121,6 +131,15 @@ class MainActivity : ComponentActivity() {
         ).filter { it.title.contains(query, true) }
         if (results.isEmpty()) results += Card("empty", if (page == "Home") "Start with your channels" else "Nothing here yet", "Add a playlist or connect your PC to get started", "+") { addDialog() }
         return results
+    }
+    private fun freeMovieCards(): List<Card> = listOf(
+        Card("free-plex", "Plex movie channels", "Free with ads · official app / browser", "FREE + ADS") { officialMovieService("Plex movie channels", "Plex offers free, ad-supported movie channels. Open the Movies category in its official service. A free account/app may be required and individual channels vary by country.", "https://watch.plex.tv/live-tv/category/movies") },
+        Card("free-classic", "Classic Cinema", "Classic films · Plex · region-dependent", "FREE + ADS") { officialMovieService("Classic Cinema", "Watch the channel on its official Plex page. Availability depends on your location and the current channel lineup. This opens the official app or browser.", "https://watch.plex.tv/live-tv/channel/classic-cinema") },
+        Card("free-roku", "The Roku Channel movies", "Free movie-channel guide · supported regions", "FREE + ADS") { officialMovieService("The Roku Channel", "The Roku Channel offers free movie channels including FilmRise Free Movies and other rotating film channels. It is region-limited and may not be available in Sri Lanka. Check the official service; no region restrictions are bypassed.", "https://therokuchannel.roku.com/") },
+        Card("free-help", "About HBO / Warner Bros.", "Premium networks require an authorized subscription", "INFO") { message("HBO and movie-channel availability", "HBO's premium channels require an authorized subscription. Warner Bros. content can appear on separately licensed free services, but that does not make HBO or every Warner Bros. movie free.\n\nThe free service cards open official apps/websites and preserve their ads and access rules. They are not built-in direct streams.\n\nImport your authorized movie-channel playlist with a Movies group to use the built-in player here.") }
+    )
+    private fun officialMovieService(name: String, details: String, url: String) {
+        AlertDialog.Builder(this).setTitle(name).setMessage(details).setPositiveButton("Open official service") { _, _ -> openLink(url, false) }.setNegativeButton("Close", null).show()
     }
     private fun renderCards() {
         if (!::grid.isInitialized) return
@@ -164,6 +183,15 @@ class MainActivity : ComponentActivity() {
         val opts = arrayOf("Play", "Open with external player", if (c.id in store.favorites()) "Remove favorite" else "Add favorite", "Cancel")
         AlertDialog.Builder(this).setTitle(c.name).setItems(opts) { _, i -> when (i) { 0 -> play(c); 1 -> external(c); 2 -> Network.io.execute { store.favorite(c.id) } } }.show()
     }
+    private fun movieDialog(movie: Movie) {
+        val c = movie.channel(); val resume = store.position(c.id) / 60000
+        AlertDialog.Builder(this).setTitle(movie.title).setMessage("${movie.year} · ${movie.minutes} min · ${movie.category}\n\n${movie.description}\n\n${movie.credit}\n${movie.license}\nSource checked: ${movie.verified}" + if (resume > 0) "\n\nResume near minute $resume" else "")
+            .setPositiveButton(if (resume > 0) "Resume" else "Play") { _, _ -> play(c) }
+            .setNeutralButton("More options") { _, _ -> AlertDialog.Builder(this).setTitle(movie.title).setItems(arrayOf("Play from beginning", "Open with external player", if (c.id in store.favorites()) "Remove favorite" else "Add favorite", "Creator / source page")) { _, i -> when(i) {
+                0 -> background("Starting…") { store.savePosition(c.id, 0); runOnUiThread { play(c) }; "Playing ${c.name}" }
+                1 -> external(c); 2 -> Network.io.execute { store.favorite(c.id) }; 3 -> openLink(movie.sourceUrl, false)
+            } }.show() }.setNegativeButton("Close", null).show()
+    }
     private fun play(c: Channel) { if (prefs.getBoolean("external", false)) external(c) else startActivity(Intent(this, PlaybackActivity::class.java).putExtra("id", c.id).putExtra("url", c.url).putExtra("name", c.name)) }
     private fun external(c: Channel) { try { startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, Uri.parse(c.url)).setDataAndType(Uri.parse(c.url), if (c.url.substringBefore('?').endsWith(".m3u8")) "application/x-mpegURL" else "video/*"), "Play with")); Network.io.execute { store.watched(c.id) } } catch (_: Exception) { toast("No compatible external player installed") } }
     private fun openLink(url: String, chooser: Boolean) { if (!Playlist.safeUrl(url)) return; try { val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE); startActivity(if (chooser) Intent.createChooser(i, "Open with") else i) } catch (_: Exception) { toast("No browser installed. Install a TV-compatible browser.") } }
@@ -197,18 +225,18 @@ class MainActivity : ComponentActivity() {
         val dialog = AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton("Cancel", null).setPositiveButton("Save", null).create()
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { action(edits.map { it.text.toString().trim() }); dialog.dismiss() } }; dialog.show()
     }
-    private fun sourceForm(kind: String) = form("Add ${if (kind == "text") "M3U text" else kind}", listOf("Source name" to "", "URL or M3U text" to "")) { values -> background("Importing…") { Network.import(store, values[0], values[1], kind) } }
+    private fun sourceForm(kind: String) { val target = if (page == "VOD") "vod" else "live"; form("Add ${if (target == "vod") "VOD" else "TV"} ${if (kind == "text") "M3U text" else kind}", listOf("Source name" to "", "URL or M3U text" to "")) { values -> background("Importing…") { Network.import(store, values[0], values[1], kind, target) } } }
     private fun linkForm(l: WebLink?) = form("Web link", listOf("Name" to (l?.name ?: ""), "https://…" to (l?.url ?: ""))) { values -> background("Saving…") { store.putLink(values[0], values[1], l?.id ?: java.util.UUID.randomUUID().toString(), l?.home ?: false); "Link saved" } }
-    private fun selectGroup() { val groups = listOf("All groups") + store.channels().flatMap { it.group.split(';') }.distinct().sorted(); AlertDialog.Builder(this).setTitle("Filter by group").setItems(groups.toTypedArray()) { _, i -> group = groups[i]; render() }.show() }
+    private fun selectGroup() { val groups = listOf("All groups") + (store.channels() + vod.entries().map { it.channel() }).flatMap { it.group.split(';') }.distinct().sorted(); AlertDialog.Builder(this).setTitle("Filter by group").setItems(groups.toTypedArray()) { _, i -> group = groups[i]; render() }.show() }
     private fun sourceDialog() {
         val sources = store.sources(); val options = listOf("All sources") + sources.map { it.name }
         AlertDialog.Builder(this).setTitle("Sources · select to filter/manage").setItems(options.toTypedArray()) { _, i ->
             if (i == 0) { sourceFilter = "All sources"; render() } else {
                 val s = sources[i - 1]
                 AlertDialog.Builder(this).setTitle(s.name).setItems(arrayOf("Show channels", "Refresh", "Edit URL", "Delete…")) { _, action -> when(action) {
-                    0 -> { sourceFilter = s.name; page = "Channels"; render() }
-                    1 -> background("Refreshing…") { require(s.url.isNotBlank()) { "Re-import pasted/direct sources to edit them" }; Network.import(store, s.name, s.url, "playlist") }
-                    2 -> form("Edit source URL", listOf("Name" to s.name, "Playlist URL" to s.url)) { v -> background("Updating…") { require(v[0] == s.name) { "Keep the source name to retain identity" }; Network.import(store, v[0], v[1], "playlist") } }
+                    0 -> { sourceFilter = s.name; page = if (s.kind == "vod") "VOD" else "Channels"; render() }
+                    1 -> background("Refreshing…") { require(s.url.isNotBlank()) { "Re-import pasted/direct sources to edit them" }; Network.import(store, s.name, s.url, "playlist", s.kind) }
+                    2 -> form("Edit source URL", listOf("Name" to s.name, "Playlist URL" to s.url)) { v -> background("Updating…") { require(v[0] == s.name) { "Keep the source name to retain identity" }; Network.import(store, v[0], v[1], "playlist", s.kind) } }
                     3 -> AlertDialog.Builder(this).setTitle("Delete ${s.name} and its channels?").setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> background("Removing…") { store.deleteSource(s.name); "Source removed" } }.show()
                 } }.show()
             }
@@ -216,7 +244,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun refreshSources() {
         if (refreshing) return; refreshing = true
-        background("Refreshing sources…") { try { var ok = 0; var failed = 0; store.sources().filter { it.url.isNotBlank() }.forEach { s -> runCatching { Network.import(store, s.name, s.url, "playlist") }.onSuccess { ok++ }.onFailure { failed++ } }; "$ok sources refreshed · $failed failed (cached channels retained)" } finally { refreshing = false } }
+        background("Refreshing sources…") { try { var ok = 0; var failed = 0; store.sources().filter { it.url.isNotBlank() }.forEach { s -> runCatching { Network.import(store, s.name, s.url, "playlist", s.kind) }.onSuccess { ok++ }.onFailure { failed++ } }; "$ok sources refreshed · $failed failed (cached channels retained)" } finally { refreshing = false } }
     }
     private fun pcDialog() {
         if (server == null) { try { server = ManagerServer(this, store).also { it.start(15000, false) } } catch (_: Exception) { server = null; message("PC manager unavailable", "Could not open port 8765. Restart the app and try again."); return } }
@@ -247,7 +275,7 @@ class MainActivity : ComponentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data); if (resultCode != RESULT_OK) return; val uri = data?.data ?: return
         when(requestCode) {
-            101 -> form("Name this playlist", listOf("Source name" to "Imported playlist")) { v -> background("Importing file…") { val text = contentResolver.openInputStream(uri)!!.use { readLimited(it) }; Network.import(store, v[0], text, "text") } }
+            101 -> { val target = if (page == "VOD") "vod" else "live"; form("Name this playlist", listOf("Source name" to "Imported playlist")) { v -> background("Importing file…") { val text = contentResolver.openInputStream(uri)!!.use { readLimited(it) }; Network.import(store, v[0], text, "text", target) } } }
             102 -> background("Exporting…") { contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(store.export()) }; "Backup exported" }
             103 -> AlertDialog.Builder(this).setTitle("Replace your library from backup?").setNegativeButton("Cancel", null).setPositiveButton("Restore") { _, _ -> background("Restoring…") { val text = contentResolver.openInputStream(uri)!!.use { readLimited(it) }; store.restore(text); "Backup restored" } }.show()
         }

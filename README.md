@@ -25,6 +25,22 @@ Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Install with `adb instal
 
 The initial UI uses native Android Views and a recycled card grid to keep dependencies and drawing overhead small. Channel logos are cached and decoded at small sizes. There are no decorative animations or previews.
 
+## Manual TV rewind and 12-hour clock seeking
+
+On a seekable live channel, open the controls and choose **−30 min** to rewind from the current position. This is a manual action; tuning a channel does not jump backward. The source must expose at least 30 minutes before the current position. If it does not, the app explains the available history and leaves playback unchanged. It does not invent footage, record all channels, or bypass provider restrictions.
+
+**Go to time (AM/PM)** uses a 12-hour picker and the broadcast timestamps in the live stream. The player shows the available interval and current TV time in the device's local timezone. A selection near midnight resolves to the most recent matching date within the stream's timeline; times outside the available window are rejected. Sources without broadcast timestamps can still use relative seeking when supported, but cannot offer reliable wall-clock seeking. **Go live** returns to the provider's live edge.
+
+## VOD / movies
+
+The VOD screen separates on-demand movies from live channels. The initial creator-authorized catalog contains the complete features **Sita Sings the Blues** and **Seder-Masochism**, and the complete shorts **Sintel** and **Big Buck Bunny**. Film details show runtime, attribution, authorization information, and the creator/source page. The player supports resume, start over, seeking, favorites, and external players.
+
+This is a starter catalog, not every free film on the internet. Commercial titles such as Batman v Superman are not represented as free without a verified authorized source. Catalog availability and device codec compatibility can vary. No third-party streaming service is scraped or bypassed.
+
+From the PC manager, choose **VOD / movies** as the library destination before importing an M3U or direct movie URL. On the TV, use **+ Add** while viewing VOD. Source refresh, backups, and restores retain that destination. Existing playlists remain live TV after upgrading.
+
+The catalog is bundled from `catalog/vod.json`; **Settings → Refresh free movie catalog** retrieves the current version from the repository while keeping the last valid version if refresh fails. Each catalog entry must include the creator credit and rights/source information. Creator sources checked November 1, 2026: https://sedermasochism.com/download/, https://www.sitasingstheblues.com/watch.html, https://durian.blender.org/download/, and https://peach.blender.org/about/.
+
 ## Manage from a PC
 
 1. On the TV, open **Settings → Connect your PC**.
@@ -37,6 +53,12 @@ The TV app must remain running; force-stopping it stops the server. Guest Wi-Fi/
 This is a local HTTP server: pairing restricts access but does not encrypt traffic. Use a trusted LAN, never port-forward it, and protect backups because stream URLs may contain tokens. Uploads are limited to 8 MB. JSON requests, origin checks, authorization headers, and lack of cross-origin permission protect state-changing endpoints from ordinary cross-site requests.
 
 Importing under the same source name replaces only that source after successful parsing. Empty/failed refreshes retain the prior catalog. Renaming an existing source is intentionally restricted to protect channel identity; add a new named source and delete the old one if required.
+
+## Free movie channels
+
+**Free Movies** links to the official Plex Movies guide, Classic Cinema on Plex, and The Roku Channel. These services play in their official app/browser, carry ads, and have regional restrictions; Roku may be unavailable in Sri Lanka. Imported live channels with a group containing `movie` also appear here and use the built-in player. These links do not provide a subscription to HBO or Warner Bros. premium networks. No authorized free source for Batman v Superman is bundled.
+
+Sources checked November 1, 2026: [Plex Movies](https://watch.plex.tv/live-tv/category/movies), [Classic Cinema](https://watch.plex.tv/live-tv/channel/classic-cinema), [Roku guide](https://www.roku.com/blog/live-tv-channel-guide), and [HBO subscription options](https://www.hbo.com/ways-to-get). Individual channel lineups can change.
 
 ## Sri Lankan TV
 

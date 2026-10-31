@@ -51,12 +51,12 @@ class ManagerServer(private val context: Context, private val store: Store) : Na
             if (s.method != Method.POST) return error(Response.Status.NOT_FOUND, "Not found")
             val b = body()
             val message = when (s.uri) {
-                "/import" -> Network.import(store, b.getString("name"), b.getString("value"), b.getString("kind"))
+                "/import" -> Network.import(store, b.getString("name"), b.getString("value"), b.getString("kind"), b.optString("target", "live"))
                 "/link" -> { store.putLink(b.getString("name"), b.getString("url"), b.optString("id").ifBlank { UUID.randomUUID().toString() }, b.optBoolean("home")); "Link saved" }
                 "/delete-link" -> { store.deleteLink(b.getString("id")); "Link removed" }
                 "/move-link" -> { store.moveLink(b.getString("id"), b.getInt("delta").coerceIn(-1, 1)); "Link moved" }
                 "/delete-source" -> { store.deleteSource(b.getString("name")); "Source removed" }
-                "/refresh" -> { val source = store.sources().first { it.name == b.getString("name") }; require(source.url.isNotBlank()) { "Re-import pasted playlists to refresh" }; Network.import(store, source.name, source.url, "playlist") }
+                "/refresh" -> { val source = store.sources().first { it.name == b.getString("name") }; require(source.url.isNotBlank()) { "Re-import pasted playlists to refresh" }; Network.import(store, source.name, source.url, "playlist", source.kind) }
                 "/restore" -> { store.restore(b.getString("backup")); "Backup restored" }
                 else -> return error(Response.Status.NOT_FOUND, "Not found")
             }

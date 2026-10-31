@@ -21,6 +21,7 @@ android {
     }
     buildTypes { release { signingConfig = signingConfigs.getByName("distribution"); isMinifyEnabled = false } }
     buildFeatures { buildConfig = true }
+    sourceSets.getByName("main").assets.srcDir(rootProject.file("catalog"))
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
 }

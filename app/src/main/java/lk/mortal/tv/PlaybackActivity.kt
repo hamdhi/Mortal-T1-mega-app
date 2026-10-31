@@ -3,6 +3,7 @@ package lk.mortal.tv
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import android.app.AlertDialog
+import android.app.TimePickerDialog
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
@@ -24,6 +25,8 @@ class PlaybackActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var rewind: Button
     private lateinit var forward: Button
+    private lateinit var rewindThirty: Button
+    private lateinit var seekClock: Button
     private lateinit var chrome: LinearLayout
     private var controlsVisible = false
     private var changingControls = false
@@ -35,6 +38,7 @@ class PlaybackActivity : ComponentActivity() {
     private var restored = false
     private var retryCount = 0
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val statusTick = object : Runnable { override fun run() { if (controlsVisible) updateStatus(); handler.postDelayed(this, 1000) } }
     private val id get() = intent.getStringExtra("id").orEmpty()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,6 +73,8 @@ class PlaybackActivity : ComponentActivity() {
         controls.addView(Ui.button(this, "Play / pause") { player?.let { if (it.isPlaying) it.pause() else it.play() } })
         forward = Ui.button(this, "+10 sec") { player?.takeIf { it.isCurrentMediaItemSeekable }?.seekForward() }; controls.addView(forward)
         controls.addView(Ui.button(this, "Go live") { player?.takeIf { it.isCurrentMediaItemLive }?.seekToDefaultPosition() })
+        rewindThirty = Ui.button(this, "−30 min") { rewindThirtyMinutes() }; controls.addView(rewindThirty)
+        seekClock = Ui.button(this, "Go to time (AM/PM)") { seekByClock() }; controls.addView(seekClock)
         controls.addView(Ui.button(this, "Tracks / quality") { tracksDialog() })
         lateinit var screenMode: Button
         screenMode = Ui.button(this, "Screen: Stretch") {
@@ -111,7 +117,7 @@ class PlaybackActivity : ComponentActivity() {
         playWhenReady = savedInstanceState?.getBoolean("play", true) ?: true
         Network.io.execute { Store.get(this).watched(id) }
     }
-    override fun onStart() { super.onStart(); startPlayer(); showControls() }
+    override fun onStart() { super.onStart(); startPlayer(); showControls(); handler.post(statusTick) }
     private fun showControls() {
         controlsVisible = true; chrome.visibility = View.VISIBLE
         changingControls = true; view.showController(); changingControls = false
@@ -162,9 +168,60 @@ class PlaybackActivity : ComponentActivity() {
     private fun updateStatus() {
         val p = player ?: return
         rewind.isEnabled = p.isCurrentMediaItemSeekable; forward.isEnabled = p.isCurrentMediaItemSeekable
+        rewindThirty.visibility = if (p.isCurrentMediaItemLive) View.VISIBLE else View.GONE
+        seekClock.visibility = if (p.isCurrentMediaItemLive) View.VISIBLE else View.GONE
         p.playerError?.let { status.text = "Playback failed (${it.errorCodeName}). Check the source/network or try an external player."; return }
         val type = if (p.isCurrentMediaItemLive) { if (p.isCurrentMediaItemSeekable) "LIVE · DVR seeking available" else "LIVE · this source does not support seeking" } else "On demand"
         status.text = "${intent.getStringExtra("name")}  •  $type" + if (p.playbackState == Player.STATE_BUFFERING) "  •  Buffering…" else ""
+        liveWindow()?.let { w ->
+            if (w.windowStartTimeMs != C.TIME_UNSET && w.durationMs > 0) {
+                val format = java.text.SimpleDateFormat("h:mm a", java.util.Locale.US)
+                status.append("  •  TV time ${format.format(java.util.Date(w.windowStartTimeMs + p.currentPosition))}  •  Available ${format.format(java.util.Date(w.windowStartTimeMs))}–${format.format(java.util.Date(w.windowStartTimeMs + w.durationMs))}")
+            }
+        }
+    }
+    private fun liveWindow(): Timeline.Window? {
+        val p = player ?: return null
+        if (!p.isCurrentMediaItemLive || p.currentTimeline.isEmpty) return null
+        return p.currentTimeline.getWindow(p.currentMediaItemIndex, Timeline.Window())
+    }
+    private fun rewindThirtyMinutes() {
+        val p = player ?: return
+        val target = DvrClock.rewindPosition(p.currentPosition)
+        if (!p.isCurrentMediaItemSeekable || target == null) {
+            val minutes = if (p.isCurrentMediaItemSeekable) p.currentPosition.coerceAtLeast(0) / 60000 else 0
+            showPlaybackMessage("30-minute rewind unavailable", "This source currently provides about $minutes minutes behind the playback position. Thirty minutes of past footage must be available from the channel/provider. Playback has not moved.")
+        } else { p.seekTo(target); showControls() }
+    }
+    private fun seekByClock() {
+        val p = player ?: return
+        val w = liveWindow()
+        if (w == null || !p.isCurrentMediaItemSeekable || w.windowStartTimeMs == C.TIME_UNSET || w.durationMs <= 0) {
+            showPlaybackMessage("TV clock seek unavailable", "This channel must provide a seekable live/DVR window and broadcast timestamps. You can still use the seek bar for any history the stream exposes."); return
+        }
+        val format = java.text.SimpleDateFormat("MMM d, h:mm a", java.util.Locale.US)
+        val start = w.windowStartTimeMs; val end = start + w.durationMs
+        val initial = java.util.Calendar.getInstance().apply { timeInMillis = (start + p.currentPosition - DvrClock.THIRTY_MINUTES_MS).coerceIn(start, end) }
+        trackDialogOpen = true; handler.removeCallbacks(hideControlsTask)
+        val dialog = TimePickerDialog(this, { _, hour, minute ->
+            val nowWindow = liveWindow()
+            if (nowWindow == null || nowWindow.windowStartTimeMs == C.TIME_UNSET || nowWindow.durationMs <= 0) {
+                Toast.makeText(this, "The live window changed. Try again.", Toast.LENGTH_LONG).show()
+            } else {
+                val nowStart = nowWindow.windowStartTimeMs; val nowEnd = nowStart + nowWindow.durationMs
+                val requested = DvrClock.mostRecentTime(if (hour % 12 == 0) 12 else hour % 12, minute, hour >= 12, nowEnd)
+                val target = DvrClock.positionAtTime(nowStart, nowWindow.durationMs, requested)
+                if (target == null) Toast.makeText(this, "That time is outside the available history. Playback has not moved.", Toast.LENGTH_LONG).show()
+                else p.seekTo(target)
+            }
+        }, initial.get(java.util.Calendar.HOUR_OF_DAY), initial.get(java.util.Calendar.MINUTE), false)
+        dialog.setTitle("Available: ${format.format(java.util.Date(start))} – ${format.format(java.util.Date(end))}")
+        dialog.setOnDismissListener { trackDialogOpen = false; showControls() }; dialog.show()
+    }
+    private fun showPlaybackMessage(title: String, message: String) {
+        trackDialogOpen = true; handler.removeCallbacks(hideControlsTask)
+        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK", null)
+            .setOnDismissListener { trackDialogOpen = false; showControls() }.show()
     }
     private fun tracksDialog() {
         val p = player ?: return

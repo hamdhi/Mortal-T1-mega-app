@@ -49,3 +49,13 @@ Requests were sent through an ADB-forwarded connection to the running emulator's
 - Pressing remote OK restored the controls while the media session remained PLAYING. The same input did not pause the video.
 - The restored controls showed `Screen: Stretch`, confirming the default. The Screen action also offers Fit and Zoom.
 - Controls hid again after inactivity. Controller animation is disabled, and visibility callbacks are guarded so hiding cannot immediately reopen the overlay.
+
+## Movies and DVR update 1.0.5
+
+- Signed release build passed all 23 unit tests and lint (zero errors, 30 warnings). Added tests cover DVR boundaries, midnight/noon, and catalog validation.
+- Installed over the previous signed emulator app without clearing its library. All nine navigation destinations fit at 1280x720; Free Movies shows official Plex, Classic Cinema, and Roku cards with regional/app-browser labels.
+- Imported a VOD source through the paired PC server; both its source and channel retained `kind=vod` in the persisted library. Existing sources default to live TV.
+- Started Sita Sings the Blues in the built-in player and observed video and a PLAYING media session. This verifies startup, not an uninterrupted viewing of the full film. Other bundled movie endpoints were checked for availability; complete playback and device codecs remain unverified.
+- The DASH-IF live simulator with `tsbd_3600` exposed a one-hour live window. Manual rewind moved from approximately 59 minutes to 29 minutes; the TV clock moved back 30 minutes.
+- Opened the 12-hour picker with AM/PM, traversed focus to AM using keyboard navigation, and confirmed 4:10 AM. Playback moved to the matching broadcast time in the window. Out-of-window rejection is covered by unit tests. Full Bluetooth-remote picker interaction still needs Mortal T1 testing.
+- Official service links are browser/app launchers, not verified direct IPTV streams. No free HBO subscription, free Batman v Superman, universal regional access, or rewind history absent from the source is claimed.

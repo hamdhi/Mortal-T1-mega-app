@@ -3,7 +3,7 @@ package lk.mortal.tv
 import java.net.URI
 import java.security.MessageDigest
 
-data class Channel(val id: String, val name: String, val url: String, val group: String = "Ungrouped", val logo: String = "", val source: String = "", val tvgId: String = "")
+data class Channel(val id: String, val name: String, val url: String, val group: String = "Ungrouped", val logo: String = "", val source: String = "", val tvgId: String = "", val kind: String = "live")
 data class ParseResult(val channels: List<Channel>, val skipped: Int, val isHls: Boolean)
 
 object Playlist {
