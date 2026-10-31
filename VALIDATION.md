@@ -6,7 +6,7 @@ Local delivery: **0.1.3**, Android version code **4**, signed using the local re
 
 - `testDebugUnitTest lintDebug assembleRelease`: passed.
 - 14 unit tests passed: eight playlist tests and six update identity/version/certificate policy tests.
-- Lint: zero errors; 25 warnings, including dependency updates, native UI text localization, and deprecated compatible Android APIs.
+- Lint: zero errors; 28 warnings, including dependency updates, native UI text localization, and deprecated compatible Android APIs.
 - APK signature verification: passed, APK Signature Scheme v2.
 - Git whitespace check: passed. Signing files and temporary test data are ignored by Git.
 
