@@ -1,6 +1,7 @@
 package lk.mortal.tv
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.activity.addCallback
 import android.app.AlertDialog
 import android.content.Intent
 import android.net.Uri
@@ -15,7 +16,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.util.Locale
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var store: Store
     private lateinit var body: LinearLayout
     private lateinit var grid: RecyclerView
@@ -32,6 +33,9 @@ class MainActivity : Activity() {
     private var savedState: android.os.Parcelable? = null
     private var focusId = ""
     private var refreshing = false
+    private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val epg by lazy { Epg(this) }
+    private val timedRefresh = object : Runnable { override fun run() { if (prefs.getBoolean("autoRefresh", false)) refreshSources(); refreshHandler.postDelayed(this, 6 * 3600000L) } }
     private data class Card(val id: String, val title: String, val subtitle: String, val badge: String, val logo: String = "", val action: () -> Unit)
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -61,6 +65,11 @@ class MainActivity : Activity() {
         grid = RecyclerView(this).apply { layoutManager = GridLayoutManager(this@MainActivity, 3); clipToPadding = false; setPadding(0, d(16), 0, d(20)); itemAnimator = null }
         body.addView(grid, LinearLayout.LayoutParams(-1, 0, 1f)); root.addView(body, LinearLayout.LayoutParams(0, -1, 1f)); setContentView(root)
         render()
+        refreshHandler.postDelayed(timedRefresh, 6 * 3600000L)
+        onBackPressedDispatcher.addCallback(this) {
+            if (page != "Home") { page = "Home"; query = ""; group = "All groups"; sourceFilter = "All sources"; search.setText(""); render() }
+            else { isEnabled = false; onBackPressedDispatcher.onBackPressed(); isEnabled = true }
+        }
         if (state != null) { page = state.getString("page", "Home"); render() }
     }
     override fun onSaveInstanceState(outState: Bundle) { outState.putString("page", page); super.onSaveInstanceState(outState) }
@@ -88,6 +97,8 @@ class MainActivity : Activity() {
             Card("file", "Import playlist file", "Choose an M3U from USB or device storage", "+") { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 101) },
             Card("external", "Default player", if (prefs.getBoolean("external", false)) "External player" else "Built-in Media3 player", "▶") { prefs.edit().putBoolean("external", !prefs.getBoolean("external", false)).apply(); render() },
             Card("catalog", "Sri Lankan catalog", "Refresh a versioned catalog URL", "LK") { catalogDialog() },
+            Card("guide", "Programme guide", "XMLTV now / next · matches playlist tvg-id", "EPG") { form("XMLTV guide", listOf("XMLTV URL (plain XML, max 8 MB)" to prefs.getString("epg", "").orEmpty())) { v -> background("Refreshing guide…") { val n = epg.refresh(v[0]); prefs.edit().putString("epg", v[0]).apply(); runOnUiThread { render() }; "$n programmes loaded" } } },
+            Card("auto", "Automatic source refresh", if (prefs.getBoolean("autoRefresh", false)) "Every 6 hours while app is running" else "Off · manual refresh available", "↺") { prefs.edit().putBoolean("autoRefresh", !prefs.getBoolean("autoRefresh", false)).apply(); render() },
             Card("cache", "Clear image cache", "Keep playlists, favorites and links", "×") { Network.io.execute { Logos.clearMemory(); cacheDir.resolve("logos").deleteRecursively(); runOnUiThread { toast("Image cache cleared") } } },
             Card("about", "About Mortal TV", "Native Kotlin · Built for a remote", "M") { message("Mortal TV", "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})\nNo accounts or subscription required.\n\nHTTP streams and the PC manager use unencrypted connections. Use trusted sources and a trusted LAN.\n\nCodec, stream availability, and launcher support depend on your device. Live streams without a DVR window cannot seek.") }
         )
@@ -100,7 +111,7 @@ class MainActivity : Activity() {
             "Others" -> emptyList()
             else -> all
         }.filter { (sourceFilter == "All sources" || it.source == sourceFilter) && (group == "All groups" || group in it.group.split(';')) && (it.name.contains(query, true) || it.group.contains(query, true)) }.let { if (page == "Channels") it.sortedBy { c -> c.name.lowercase(Locale.ROOT) } else it }
-        val results = selected.map { c -> Card(c.id, c.name, c.group + " · " + c.source, if (c.id in store.favorites()) "★" else "LIVE", c.logo) { channelDialog(c) } }.toMutableList()
+        val results = selected.map { c -> Card(c.id, c.name, epg.nowNext(c.tvgId).ifBlank { c.group + " · " + c.source }, if (c.id in store.favorites()) "★" else "LIVE", c.logo) { channelDialog(c) } }.toMutableList()
         if (page == "Others" || page == "Home") results += store.links().filter { (page == "Others" || it.home) && it.name.contains(query, true) }.map { l -> Card(l.id, l.name, "Web shortcut" + if (l.home) " · Home" else "", "↗") { openLink(l.url, false) } }
         if (page == "Sri Lankan TV") results += listOf(
             Card("itn", "ITN", "Official live page · opens browser", "LK") { openLink("https://itn.lk/live/", false) },
@@ -152,11 +163,18 @@ class MainActivity : Activity() {
     private fun openLink(url: String, chooser: Boolean) { if (!Playlist.safeUrl(url)) return; try { val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE); startActivity(if (chooser) Intent.createChooser(i, "Open with") else i) } catch (_: Exception) { toast("No browser installed. Install a TV-compatible browser.") } }
     private fun linkActions(id: String) {
         val l = store.links().find { it.id == id } ?: return
-        AlertDialog.Builder(this).setTitle(l.name).setItems(arrayOf("Open", "Open with…", "Edit", if (l.home) "Remove from Home" else "Add to Home", "Move earlier", "Move later", "Delete…")) { _, i -> when(i) {
+        AlertDialog.Builder(this).setTitle(l.name).setItems(arrayOf("Open", "Open with…", "Edit", if (l.home) "Remove from Home" else "Add to Home", "Move earlier", "Move later", "Delete…", "Pin to Android launcher")) { _, i -> when(i) {
             0 -> openLink(l.url, false); 1 -> openLink(l.url, true); 2 -> linkForm(l)
             3 -> Network.io.execute { store.putLink(l.name, l.url, l.id, !l.home) }
             4, 5 -> Network.io.execute { store.moveLink(l.id, if (i == 4) -1 else 1) }
             6 -> AlertDialog.Builder(this).setTitle("Delete ${l.name}?").setNegativeButton("Cancel", null).setPositiveButton("Delete") { _, _ -> Network.io.execute { store.deleteLink(l.id) } }.show()
+            7 -> {
+                val manager = getSystemService(android.content.pm.ShortcutManager::class.java)
+                if (manager.isRequestPinShortcutSupported) {
+                    val shortcut = android.content.pm.ShortcutInfo.Builder(this, l.id).setShortLabel(l.name.take(40)).setIcon(android.graphics.drawable.Icon.createWithResource(this, R.drawable.icon)).setIntent(Intent(Intent.ACTION_VIEW, Uri.parse(l.url))).build()
+                    runCatching { manager.requestPinShortcut(shortcut, null) }.onFailure { toast("This launcher could not create the shortcut") }
+                } else message("Launcher shortcut unavailable", "This TV launcher does not support pinned shortcuts. Use Add to Home to pin this link inside Mortal TV.")
+            }
         } }.show()
     }
     private fun addDialog() {
@@ -229,7 +247,5 @@ class MainActivity : Activity() {
         }
     }
     private fun readLimited(input: java.io.InputStream): String { val output = java.io.ByteArrayOutputStream(); val buffer = ByteArray(8192); while (true) { val n = input.read(buffer); if (n < 0) break; require(output.size() + n <= Network.LIMIT) { "Maximum file size is 8 MB" }; output.write(buffer, 0, n) }; return output.toString("UTF-8") }
-    @Deprecated("Remote Back compatibility")
-    override fun onBackPressed() { if (page != "Home") { page = "Home"; query = ""; search.setText(""); render() } else super.onBackPressed() }
-    override fun onDestroy() { store.listeners.remove(listener); server?.stop(); server = null; super.onDestroy() }
+    override fun onDestroy() { refreshHandler.removeCallbacksAndMessages(null); store.listeners.remove(listener); server?.stop(); server = null; super.onDestroy() }
 }

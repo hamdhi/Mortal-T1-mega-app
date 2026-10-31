@@ -1,6 +1,7 @@
 package lk.mortal.tv
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.activity.addCallback
 import android.app.AlertDialog
 import android.os.Bundle
 import android.view.KeyEvent
@@ -15,7 +16,7 @@ import androidx.media3.ui.PlayerView
 import androidx.media3.common.util.UnstableApi
 
 @androidx.annotation.OptIn(UnstableApi::class)
-class PlaybackActivity : Activity() {
+class PlaybackActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     private var session: MediaSession? = null
     private lateinit var view: PlayerView
@@ -49,6 +50,10 @@ class PlaybackActivity : Activity() {
         bar.addView(controls); root.addView(bar)
         status = Ui.label(this, intent.getStringExtra("name").orEmpty(), 12f, Ui.muted).apply { setPadding(24, 4, 24, 8) }; root.addView(status)
         setContentView(root)
+        onBackPressedDispatcher.addCallback(this) {
+            if (view.isControllerFullyVisible) view.hideController()
+            else { isEnabled = false; onBackPressedDispatcher.onBackPressed(); isEnabled = true }
+        }
         position = savedInstanceState?.getLong("position") ?: Store.get(this).position(id)
         playWhenReady = savedInstanceState?.getBoolean("play", true) ?: true
         Network.io.execute { Store.get(this).watched(id) }
@@ -118,8 +123,6 @@ class PlaybackActivity : Activity() {
         }
         return super.dispatchKeyEvent(event)
     }
-    @Deprecated("Remote Back compatibility")
-    override fun onBackPressed() { if (view.isControllerFullyVisible) view.hideController() else super.onBackPressed() }
     override fun onSaveInstanceState(outState: Bundle) { player?.let { outState.putLong("position", it.currentPosition); outState.putBoolean("play", it.playWhenReady) }; super.onSaveInstanceState(outState) }
     override fun onStop() {
         handler.removeCallbacksAndMessages(null)

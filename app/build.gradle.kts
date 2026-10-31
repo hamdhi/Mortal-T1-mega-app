@@ -25,6 +25,7 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    implementation("androidx.activity:activity-ktx:1.11.0")
     implementation("androidx.recyclerview:recyclerview:1.4.0")
     implementation("androidx.core:core-ktx:1.17.0")
     val media = "1.11.1"
