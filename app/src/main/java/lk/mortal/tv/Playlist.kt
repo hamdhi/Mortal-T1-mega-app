@@ -21,6 +21,8 @@ object Playlist {
         }
         var name = ""; var attrs = emptyMap<String, String>(); var skipped = 0
         val channels = linkedMapOf<String, Channel>()
+        val seenUrls = mutableSetOf<String>()
+        val occurrences = mutableMapOf<String, Int>()
         val attribute = Regex("([\\w-]+)\\s*=\\s*\"([^\"]*)\"")
         for (line in lines) {
             if (line.startsWith("#EXTINF:", true)) {
@@ -34,7 +36,11 @@ object Playlist {
             } else if (line.isNotBlank() && !line.startsWith("#")) {
                 val url = runCatching { if (base.isNotEmpty()) URI(base).resolve(line).toString() else line }.getOrDefault("")
                 if (safeUrl(url)) {
-                    val id = identity("$source|${attrs["tvg-id"].orEmpty()}|$url")
+                    if (!seenUrls.add("${attrs["tvg-id"].orEmpty()}|$url")) { name = ""; attrs = emptyMap(); continue }
+                    val tvgId = attrs["tvg-id"].orEmpty()
+                    val occurrence = occurrences.getOrDefault(tvgId, 0)
+                    if (tvgId.isNotEmpty()) occurrences[tvgId] = occurrence + 1
+                    val id = identity(if (tvgId.isNotEmpty()) "$source|$tvgId|$occurrence" else "$source||$url")
                     val title = name.ifBlank { attrs["tvg-name"].orEmpty() }.ifBlank { "Channel ${channels.size + 1}" }
                     val logo = attrs["tvg-logo"].orEmpty().let { runCatching { if (base.isNotEmpty()) URI(base).resolve(it).toString() else it }.getOrDefault("") }
                     channels[id] = Channel(id, title, url, attrs["group-title"].orEmpty().ifBlank { "Ungrouped" }, logo.takeIf { safeUrl(it) }.orEmpty(), source, attrs["tvg-id"].orEmpty())

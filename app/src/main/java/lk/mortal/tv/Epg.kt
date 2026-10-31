@@ -16,9 +16,10 @@ class Epg(private val context: Context) {
     @Volatile private var programs: List<Programme> = runCatching {
         JSONArray(AtomicFile(File(context.filesDir, "epg.json")).openRead().bufferedReader().use { it.readText() }).objects().map { Programme(it.getString("channel"), it.getLong("start"), it.getLong("stop"), it.getString("title")) }
     }.getOrDefault(emptyList())
+    @Volatile private var byChannel = programs.groupBy { it.channel }
     fun nowNext(id: String): String {
         if (id.isBlank()) return ""
-        val now = System.currentTimeMillis(); val matches = programs.filter { it.channel == id }
+        val now = System.currentTimeMillis(); val matches = byChannel[id].orEmpty()
         val current = matches.firstOrNull { it.start <= now && it.stop > now }
         val next = matches.filter { it.start > now }.minByOrNull { it.start }
         return listOfNotNull(current?.let { "Now: ${it.title}" }, next?.let { "Next: ${it.title}" }).joinToString(" · ")
@@ -41,7 +42,7 @@ class Epg(private val context: Context) {
         val array = JSONArray(items.map { JSONObject().put("channel", it.channel).put("start", it.start).put("stop", it.stop).put("title", it.title) })
         val file = AtomicFile(File(context.filesDir, "epg.json")); val out = file.startWrite()
         try { out.write(array.toString().toByteArray()); file.finishWrite(out) } catch (e: Exception) { file.failWrite(out); throw e }
-        programs = items; return items.size
+        programs = items; byChannel = items.groupBy { it.channel }; return items.size
     }
     private fun date(value: String): Long = runCatching {
         val normalized = value.trim(); require(normalized.matches(Regex("\\d{14} [+-]\\d{4}")))

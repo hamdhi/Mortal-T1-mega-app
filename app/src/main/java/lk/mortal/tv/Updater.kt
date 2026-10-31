@@ -51,12 +51,10 @@ class Updater(private val activity: Activity) {
         val flags = if (android.os.Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
         val installed = pm.getPackageInfo(activity.packageName, flags)
         val archive = pm.getPackageArchiveInfo(file.absolutePath, flags) ?: error("Unreadable APK")
-        require(archive.packageName == activity.packageName) { "Package identity mismatch" }
         val archiveCode = if (android.os.Build.VERSION.SDK_INT >= 28) archive.longVersionCode else archive.versionCode.toLong()
-        require(archiveCode == code.toLong() && archiveCode > BuildConfig.VERSION_CODE) { "Version mismatch" }
         val currentCerts = if (android.os.Build.VERSION.SDK_INT >= 28) installed.signingInfo?.apkContentsSigners else installed.signatures
         val updateCerts = if (android.os.Build.VERSION.SDK_INT >= 28) archive.signingInfo?.apkContentsSigners else archive.signatures
-        require(!currentCerts.isNullOrEmpty() && !updateCerts.isNullOrEmpty() && currentCerts.map { it.toCharsString() }.toSet() == updateCerts.map { it.toCharsString() }.toSet()) { "Signing certificate mismatch. Use an update signed by the original publisher." }
+        UpdatePolicy.verifyPackage(activity.packageName, archive.packageName.orEmpty(), BuildConfig.VERSION_CODE.toLong(), code.toLong(), archiveCode, currentCerts.orEmpty().map { it.toCharsString() }.toSet(), updateCerts.orEmpty().map { it.toCharsString() }.toSet())
     }
     fun install(file: File) {
         if (!activity.packageManager.canRequestPackageInstalls()) {

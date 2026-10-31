@@ -30,4 +30,13 @@ class PlaylistTest {
         assertEquals("Name, alternate", c.name); assertEquals("A,B", c.group)
     }
     @Test(expected = IllegalArgumentException::class) fun hlsTextNeedsUrl() { Playlist.parse("#EXTM3U\n#EXT-X-TARGETDURATION:6\nsegment.ts") }
+    @Test fun preservesTvgIdentityAcrossTokenRefresh() {
+        val a = Playlist.parse("#EXTINF:-1 tvg-id=\"a\",A\nhttps://example.com/a?token=one")
+        val b = Playlist.parse("#EXTINF:-1 tvg-id=\"a\",A\nhttps://example.com/a?token=two")
+        assertEquals(a.channels.single().id, b.channels.single().id)
+    }
+    @Test fun preservesVariantsSharingTvgId() {
+        val r = Playlist.parse("#EXTINF:-1 tvg-id=\"a\",A SD\nhttps://example.com/a\n#EXTINF:-1 tvg-id=\"a\",A HD\nhttps://example.com/b")
+        assertEquals(2, r.channels.size); assertNotEquals(r.channels[0].id, r.channels[1].id)
+    }
 }

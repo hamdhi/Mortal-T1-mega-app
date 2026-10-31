@@ -18,6 +18,7 @@ class ManagerServer(private val context: Context, private val store: Store) : Na
     }.getOrNull() ?: "No LAN address — connect TV to Wi-Fi/Ethernet"
     override fun serve(s: IHTTPSession): Response {
         fun reply(status: Response.Status, body: String, mime: String = "application/json"): Response = newFixedLengthResponse(status, mime, body).apply {
+            closeConnection(true)
             addHeader("Cache-Control", "no-store"); addHeader("X-Content-Type-Options", "nosniff"); addHeader("X-Frame-Options", "DENY")
             addHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
         }

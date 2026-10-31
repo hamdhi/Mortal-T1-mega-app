@@ -90,6 +90,7 @@ class PlaybackActivity : ComponentActivity() {
     private fun updateStatus() {
         val p = player ?: return
         rewind.isEnabled = p.isCurrentMediaItemSeekable; forward.isEnabled = p.isCurrentMediaItemSeekable
+        p.playerError?.let { status.text = "Playback failed (${it.errorCodeName}). Check the source/network or try an external player."; return }
         val type = if (p.isCurrentMediaItemLive) { if (p.isCurrentMediaItemSeekable) "LIVE · DVR seeking available" else "LIVE · this source does not support seeking" } else "On demand"
         status.text = "${intent.getStringExtra("name")}  •  $type" + if (p.playbackState == Player.STATE_BUFFERING) "  •  Buffering…" else ""
     }
@@ -113,15 +114,13 @@ class PlaybackActivity : ComponentActivity() {
         }
         AlertDialog.Builder(this).setTitle("Tracks & quality").setItems(labels.toTypedArray()) { _, i -> actions[i]() }.show()
     }
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN) {
-            when(event.keyCode) {
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+            when(keyCode) {
                 KeyEvent.KEYCODE_MEDIA_REWIND -> { player?.takeIf { it.isCurrentMediaItemSeekable }?.seekBack(); return true }
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { player?.takeIf { it.isCurrentMediaItemSeekable }?.seekForward(); return true }
                 KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { player?.let { if (it.isPlaying) it.pause() else it.play() }; return true }
             }
-        }
-        return super.dispatchKeyEvent(event)
+        return super.onKeyDown(keyCode, event)
     }
     override fun onSaveInstanceState(outState: Bundle) { player?.let { outState.putLong("position", it.currentPosition); outState.putBoolean("play", it.playWhenReady) }; super.onSaveInstanceState(outState) }
     override fun onStop() {

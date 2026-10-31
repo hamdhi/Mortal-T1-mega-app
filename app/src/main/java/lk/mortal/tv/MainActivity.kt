@@ -125,6 +125,8 @@ class MainActivity : ComponentActivity() {
     private fun renderCards() {
         if (!::grid.isInitialized) return
         val state = grid.layoutManager?.onSaveInstanceState()
+        val focusedId = grid.findFocus()?.tag as? String
+        val hadGridFocus = grid.hasFocus()
         val data = cards()
         grid.adapter = object : RecyclerView.Adapter<CardHolder>() {
             init { setHasStableIds(true) }
@@ -143,15 +145,19 @@ class MainActivity : ComponentActivity() {
             }
             override fun onBindViewHolder(holder: CardHolder, position: Int) {
                 val c = data[position]; holder.badge.text = c.badge; holder.title.text = c.title; holder.sub.text = c.subtitle
+                holder.itemView.tag = c.id
                 Logos.load(holder.logo, c.logo)
                 holder.itemView.contentDescription = "${c.title}, ${c.subtitle}"
                 holder.itemView.setOnClickListener { focusId = c.id; savedState = grid.layoutManager?.onSaveInstanceState(); c.action() }
                 holder.itemView.setOnLongClickListener { linkActions(c.id); true }
                 holder.itemView.setOnKeyListener { _, code, event -> if (code == android.view.KeyEvent.KEYCODE_MENU && event.action == android.view.KeyEvent.ACTION_UP) { linkActions(c.id); true } else false }
-                if (focusId == c.id && !search.hasFocus()) holder.itemView.post { if (grid.hasFocus()) holder.itemView.requestFocus() }
             }
         }
         state?.let { grid.layoutManager?.onRestoreInstanceState(it) }
+        if (hadGridFocus) grid.post {
+            val index = data.indexOfFirst { it.id == (focusedId ?: focusId) }.coerceAtLeast(0)
+            grid.findViewHolderForAdapterPosition(index)?.itemView?.requestFocus()
+        }
     }
     private class CardHolder(view: View, val badge: TextView, val title: TextView, val sub: TextView, val logo: ImageView) : RecyclerView.ViewHolder(view)
     private fun channelDialog(c: Channel) {
@@ -218,12 +224,12 @@ class MainActivity : ComponentActivity() {
     }
     private fun catalogDialog() = form("Refresh Sri Lankan catalog", listOf("HTTPS M3U catalog URL" to prefs.getString("catalog", "").orEmpty())) { v -> background("Refreshing catalog…") { require(v[0].startsWith("https://")) { "Use an HTTPS M3U URL" }; val result = Network.import(store, "Sri Lankan TV", v[0], "playlist"); prefs.edit().putString("catalog", v[0]).apply(); result } }
     private fun updateDialog() {
-        val repo = prefs.getString("repo", "").orEmpty()
+        val repo = prefs.getString("repo", "hamdhi/Mortal-T1-mega-app").orEmpty()
         if (repo.isBlank()) { form("GitHub updates", listOf("Public repository: owner/repo" to "")) { v -> if (v[0].matches(Regex("[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+"))) { prefs.edit().putString("repo", v[0]).apply(); updateDialog() } else toast("Enter owner/repo") }; return }
         background("Checking $repo…") { val release = Updater(this).check(repo); runOnUiThread {
             AlertDialog.Builder(this).setTitle(if (release.code > BuildConfig.VERSION_CODE) "Update ${release.name}" else "You're up to date")
                 .setMessage("Installed: ${BuildConfig.VERSION_NAME}\nLatest: ${release.name}\n\n${release.notes.take(1800)}")
-                .setNegativeButton("Close", null).setNeutralButton("Change repository") { _, _ -> prefs.edit().remove("repo").apply(); updateDialog() }
+                .setNegativeButton("Close", null).setNeutralButton("Change repository") { _, _ -> prefs.edit().putString("repo", "").apply(); updateDialog() }
                 .apply { if (release.code > BuildConfig.VERSION_CODE) setPositiveButton("Download & install") { _, _ -> downloadUpdate(release) } }.show()
         }; "Update check complete" }
     }

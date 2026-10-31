@@ -4,7 +4,7 @@ Native Kotlin Android TV IPTV player and personal web-link launcher. Designed fo
 
 ## Build and install
 
-Requirements: JDK 17, Android SDK platform 36 and build tools 36.0.0. Set `ANDROID_HOME` or create an ignored `local.properties` containing `sdk.dir=C:/Android/Sdk` (use your SDK location).
+Requirements: JDK 17, Android SDK platform 36 and build tools 36.0.0. Set `ANDROID_HOME` or create an ignored `local.properties` containing `sdk.dir=C\:/Android/Sdk` (use your SDK location).
 
 ```powershell
 $env:JAVA_HOME='C:\Program Files\Java\jdk-17'
@@ -68,7 +68,7 @@ Workflow versions are `versionCode = 1000 + github.run_number`, `versionName = 1
 
 In **Settings → App updates**, enter `owner/repository`. The app reads the latest release metadata, downloads the APK, verifies SHA-256, application ID, exact version, and the same signing certificate as the installed app. It invokes Android's installer. Enable installs from Mortal TV if prompted, then choose **Settings → Install downloaded update**. Android requires the user's installation confirmation. The app does not contain GitHub tokens and cannot consume private release URLs without an additional secure delivery service.
 
-This workspace initially has no Git remote and its saved GitHub CLI credential is invalid. Publishing requires a repository URL and renewed access. No push/release is claimed until actually performed.
+The configured repository is `hamdhi/Mortal-T1-mega-app`. App update checks use it by default; Settings can override the repository. Public releases are required for the token-free download flow. The release signing key is stored locally in the ignored `.signing/` directory and configured in the four GitHub Actions signing secrets. Back up this directory securely; losing the key prevents compatible future updates. Never add it to Git.
 
 ## Verification and remaining scope
 
@@ -76,4 +76,6 @@ Unit tests cover playlist metadata, quoted commas, BOM/line endings, relative li
 
 Manual device checks should cover remote-only navigation, refresh failures, large playlists, browser/player intents, live and on-demand playback, PC pairing/import/restore, and upgrading over a previous APK signed with the same certificate. Actual Mortal T1 testing requires device access; a generic emulator does not verify the box's codecs or Bluetooth remote.
 
-Follow-on work includes XMLTV EPG/now-next, optional timed source refresh, Android launcher shortcuts where supported, broader verified Sri Lankan direct-stream coverage, and remembered external app selection. Home pinning currently means the app's own Home screen. No silent Android update, recording, or universal codec/DRM support is promised.
+XMLTV now/next is available in Settings and maps programmes using playlist `tvg-id`. Plain XML feeds are limited to 8 MB; cached current/upcoming programmes cover up to 48 hours. Optional source refresh runs every six hours while the app remains running. Link actions also offer Android launcher pinning when the launcher supports it; Add to Home pins inside the app.
+
+Remaining scope includes broader verified Sri Lankan direct-stream coverage and remembered external app selection. No silent Android update, recording, or universal codec/DRM support is promised.
