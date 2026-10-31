@@ -27,6 +27,8 @@ class MainActivity : ComponentActivity() {
     private var query = ""
     private var group = "All groups"
     private var sourceFilter = "All sources"
+    private var quality = ChannelQuality.ALL
+    private lateinit var qualityButton: Button
     private var server: ManagerServer? = null
     private val listener: () -> Unit = { runOnUiThread { if (::grid.isInitialized) render() } }
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
@@ -46,7 +48,7 @@ class MainActivity : ComponentActivity() {
         val nav = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, d(22), 0) }
         nav.addView(Ui.label(this, "M / MORTAL", 22f, Ui.accent)); nav.addView(Ui.label(this, "YOUR TV, SIMPLIFIED", 10f, Ui.muted))
         listOf("Home", "Channels", "VOD", "Free Movies", "Sri Lankan TV", "Favorites", "Recent", "Others", "Settings").forEach { name ->
-            nav.addView(Ui.button(this, name) { page = name; query = ""; group = "All groups"; sourceFilter = "All sources"; savedState = null; focusId = ""; search.setText(""); render() }, LinearLayout.LayoutParams(d(168), d(39)).apply { topMargin = d(3) })
+            nav.addView(Ui.button(this, name) { page = name; query = ""; group = "All groups"; sourceFilter = "All sources"; quality = ChannelQuality.ALL; savedState = null; focusId = ""; search.setText(""); render() }, LinearLayout.LayoutParams(d(168), d(39)).apply { topMargin = d(3) })
         }
         nav.addView(Ui.label(this, "LOCAL. PERSONAL. FAST.\nv${BuildConfig.VERSION_NAME}", 10f, Ui.muted))
         root.addView(nav, LinearLayout.LayoutParams(d(194), -1))
@@ -61,6 +63,8 @@ class MainActivity : ComponentActivity() {
         actions.addView(Ui.button(this, "+ Add") { addDialog() })
         actions.addView(Ui.button(this, "Groups") { selectGroup() })
         actions.addView(Ui.button(this, "Sources") { sourceDialog() })
+        qualityButton = Ui.button(this, "Quality: All") { selectQuality() }
+        actions.addView(qualityButton)
         actions.addView(Ui.button(this, "Refresh") { refreshSources() })
         body.addView(actions)
         grid = RecyclerView(this).apply { layoutManager = GridLayoutManager(this@MainActivity, 3); clipToPadding = false; setPadding(0, d(16), 0, d(20)); itemAnimator = null }
@@ -68,12 +72,12 @@ class MainActivity : ComponentActivity() {
         render()
         refreshHandler.postDelayed(timedRefresh, 6 * 3600000L)
         onBackPressedDispatcher.addCallback(this) {
-            if (page != "Home") { page = "Home"; query = ""; group = "All groups"; sourceFilter = "All sources"; search.setText(""); render() }
+            if (page != "Home") { page = "Home"; query = ""; group = "All groups"; sourceFilter = "All sources"; quality = ChannelQuality.ALL; search.setText(""); render() }
             else { isEnabled = false; onBackPressedDispatcher.onBackPressed(); isEnabled = true }
         }
-        if (state != null) { page = state.getString("page", "Home"); render() }
+        if (state != null) { page = state.getString("page", "Home"); quality = state.getString("quality", ChannelQuality.ALL); render() }
     }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putString("page", page); super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putString("page", page); outState.putString("quality", quality); super.onSaveInstanceState(outState) }
     override fun onResume() { super.onResume(); if (::grid.isInitialized) { render(); savedState?.let { grid.layoutManager?.onRestoreInstanceState(it) } } }
     private fun d(n: Int) = Ui.dp(this, n)
     private fun render() {
@@ -88,6 +92,8 @@ class MainActivity : ComponentActivity() {
             else -> "Select a channel for playback options. D-pad to browse · Back to return."
         }
         search.visibility = if (page == "Settings") View.GONE else View.VISIBLE
+        qualityButton.visibility = if (page in listOf("Settings", "Others", "Home")) View.GONE else View.VISIBLE
+        qualityButton.text = "Quality: " + if (quality == ChannelQuality.ALL) "All" else quality
         renderCards()
     }
     private fun cards(): List<Card> {
@@ -116,20 +122,23 @@ class MainActivity : ComponentActivity() {
             "Free Movies" -> all.filter { it.kind == "live" && it.group.contains("movie", true) }
             "Others" -> emptyList()
             else -> all.filter { it.kind == "live" }
-        }.filter { (sourceFilter == "All sources" || it.source == sourceFilter) && (group == "All groups" || group in it.group.split(';')) && (it.name.contains(query, true) || it.group.contains(query, true)) }.let { if (page == "Channels") it.sortedBy { c -> c.name.lowercase(Locale.ROOT) } else it }
+        }.filter { ChannelQuality.matches(it, quality) && (sourceFilter == "All sources" || it.source == sourceFilter) && (group == "All groups" || group in it.group.split(';')) && (it.name.contains(query, true) || it.group.contains(query, true)) }.let { if (page == "Channels") it.sortedBy { c -> c.name.lowercase(Locale.ROOT) } else it }
         val results = selected.map { c ->
             val movie = vod.entries().find { "vod:${it.id}" == c.id }
-            Card(c.id, c.name, movie?.let { "${it.year} · ${it.minutes} min · ${it.category}" } ?: epg.nowNext(c.tvgId).ifBlank { c.group + " · " + c.source }, if (c.id in store.favorites()) "★" else if (c.kind == "vod") "FILM" else "LIVE", c.logo) { if (movie != null) movieDialog(movie) else channelDialog(c) }
+            Card(c.id, c.name, (movie?.let { "${it.year} · ${it.minutes} min · ${it.category}" } ?: epg.nowNext(c.tvgId).ifBlank { c.group + " · " + c.source }) + " · " + ChannelQuality.label(c.name, c.group), if (c.id in store.favorites()) "★" else if (c.kind == "vod") "FILM" else "LIVE", c.logo) { if (movie != null) movieDialog(movie) else channelDialog(c) }
         }.toMutableList()
-        if (page == "Free Movies") results += freeMovieCards().filter { it.title.contains(query, true) }
+        if (page == "Free Movies" && quality == ChannelQuality.ALL) results += freeMovieCards().filter { it.title.contains(query, true) }
         if (page == "Others" || page == "Home") results += store.links().filter { (page == "Others" || it.home) && it.name.contains(query, true) }.map { l -> Card(l.id, l.name, "Web shortcut" + if (l.home) " · Home" else "", "↗") { openLink(l.url, false) } }
-        if (page == "Sri Lankan TV") results += listOf(
+        if (page == "Sri Lankan TV" && quality == ChannelQuality.ALL) results += listOf(
             Card("itn", "ITN", "Official live page · opens browser", "LK") { openLink("https://itn.lk/live/", false) },
             Card("vasantham", "Vasantham TV", "Official live page · opens browser", "LK") { openLink("https://vasantham.lk/", false) },
             Card("rupavahini", "Rupavahini", "Official live page · opens browser", "LK") { openLink("https://tv.rupavahini.lk/live-webcast/rupavahini-live-webcast2/", false) },
             Card("lkimport", "Add Sri Lankan streams", "Import your playlist for built-in playback", "+") { addDialog() }
         ).filter { it.title.contains(query, true) }
-        if (results.isEmpty()) results += Card("empty", if (page == "Home") "Start with your channels" else "Nothing here yet", "Add a playlist or connect your PC to get started", "+") { addDialog() }
+        if (results.isEmpty()) {
+            if (quality != ChannelQuality.ALL) results += Card("clear-quality", "No matching channels", "Quality: $quality · Select to show all qualities", "FILTER") { quality = ChannelQuality.ALL; render() }
+            else results += Card("empty", if (page == "Home") "Start with your channels" else "Nothing here yet", "Add a playlist or connect your PC to get started", "+") { addDialog() }
+        }
         return results
     }
     private fun freeMovieCards(): List<Card> = listOf(
@@ -227,6 +236,14 @@ class MainActivity : ComponentActivity() {
     }
     private fun sourceForm(kind: String) { val target = if (page == "VOD") "vod" else "live"; form("Add ${if (target == "vod") "VOD" else "TV"} ${if (kind == "text") "M3U text" else kind}", listOf("Source name" to "", "URL or M3U text" to "")) { values -> background("Importing…") { Network.import(store, values[0], values[1], kind, target) } } }
     private fun linkForm(l: WebLink?) = form("Web link", listOf("Name" to (l?.name ?: ""), "https://…" to (l?.url ?: ""))) { values -> background("Saving…") { store.putLink(values[0], values[1], l?.id ?: java.util.UUID.randomUUID().toString(), l?.home ?: false); "Link saved" } }
+    private fun selectQuality() {
+        val options = ChannelQuality.options(store.channels() + vod.entries().map { it.channel() })
+        AlertDialog.Builder(this).setTitle("Quality from playlist labels")
+            .setSingleChoiceItems(options.toTypedArray(), options.indexOf(quality)) { dialog, i ->
+                quality = options[i]; savedState = null; focusId = ""; grid.scrollToPosition(0); render(); dialog.dismiss()
+            }.setPositiveButton("Close", null)
+            .setNeutralButton("How it works") { _, _ -> message("Channel quality", "Filters use resolution labels in channel names or groups. FHD means 1080p, HD means 720p, and UHD/4K means 2160p. SD is kept separate because its exact resolution is unspecified. Unlabeled channels are Unknown.\n\nLabels are supplied by your playlist and may be inaccurate. Adaptive streams can change resolution during playback; choose Tracks / quality in the player for available renditions.") }.show()
+    }
     private fun selectGroup() { val groups = listOf("All groups") + (store.channels() + vod.entries().map { it.channel() }).flatMap { it.group.split(';') }.distinct().sorted(); AlertDialog.Builder(this).setTitle("Filter by group").setItems(groups.toTypedArray()) { _, i -> group = groups[i]; render() }.show() }
     private fun sourceDialog() {
         val sources = store.sources(); val options = listOf("All sources") + sources.map { it.name }

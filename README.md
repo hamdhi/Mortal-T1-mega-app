@@ -54,6 +54,12 @@ This is a local HTTP server: pairing restricts access but does not encrypt traff
 
 Importing under the same source name replaces only that source after successful parsing. Empty/failed refreshes retain the prior catalog. Renaming an existing source is intentionally restricted to protect channel identity; add a new named source and delete the old one if required.
 
+## Quality filtering
+
+Use **Quality: All** above the channel grid to filter by 8K/4320p, 4K/2160p, 1440p, 1080p, 720p, 576p, 512p, 480p, 360p, 240p, or 144p. Additional numeric resolution labels found in your playlist are included automatically. The filter combines with search, group, and source filters, stays selected after playback, and resets when changing destinations. Select **All qualities** to clear it; an empty result also offers a clear action.
+
+Quality comes from channel names or groups: FHD/Full HD maps to 1080p, HD to 720p, and UHD/4K to 2160p. Dimensions such as `1280x720` are recognized. Interlaced labels are grouped by vertical resolution (1080i under 1080p). SD remains separate because its resolution is unspecified; missing/conflicting labels appear as Unknown. These are playlist labels, not measured playback quality. Adaptive-stream renditions remain available through **Tracks / quality** during playback. Official service/browser cards appear only under All qualities because their playback resolution is managed by the service.
+
 ## Free movie channels
 
 **Free Movies** links to the official Plex Movies guide, Classic Cinema on Plex, and The Roku Channel. These services play in their official app/browser, carry ads, and have regional restrictions; Roku may be unavailable in Sri Lanka. Imported live channels with a group containing `movie` also appear here and use the built-in player. These links do not provide a subscription to HBO or Warner Bros. premium networks. No authorized free source for Batman v Superman is bundled.

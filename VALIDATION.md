@@ -59,3 +59,11 @@ Requests were sent through an ADB-forwarded connection to the running emulator's
 - The DASH-IF live simulator with `tsbd_3600` exposed a one-hour live window. Manual rewind moved from approximately 59 minutes to 29 minutes; the TV clock moved back 30 minutes.
 - Opened the 12-hour picker with AM/PM, traversed focus to AM using keyboard navigation, and confirmed 4:10 AM. Playback moved to the matching broadcast time in the window. Out-of-window rejection is covered by unit tests. Full Bluetooth-remote picker interaction still needs Mortal T1 testing.
 - Official service links are browser/app launchers, not verified direct IPTV streams. No free HBO subscription, free Batman v Superman, universal regional access, or rewind history absent from the source is claimed.
+
+## Quality filter update 1.0.6
+
+- Signed release packaging, all 27 unit tests, and lint passed. Four new tests cover explicit resolutions/dimensions, aliases and group fallback, ambiguous/unlabeled channels, filtering, and additional numeric options.
+- Upgraded the existing emulator installation without clearing its library. The Quality button fits beside Add, Groups, Sources, and Refresh at 1280x720.
+- D-pad/OK selected 1080p, producing a clear no-match state for the unlabeled fixture library. Scrolled the dialog to its final options with D-pad and selected Unknown; all three unlabeled live fixture channels reappeared.
+- Returning from playback retained Unknown. Changing the destination to VOD reset the selection to All. Actual Mortal T1/Bluetooth remote verification remains outstanding.
+- List quality comes from playlist labels, not stream probing. SD and Unknown remain separate; service/browser cards are excluded while a quality filter is active. The player still controls actual available adaptive renditions.
