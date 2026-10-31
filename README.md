@@ -19,6 +19,7 @@ Debug APK: `app/build/outputs/apk/debug/app-debug.apk`. Install with `adb instal
 - Select **+ Add** to add a playlist URL, direct HTTP/HTTPS stream, pasted M3U, local file, or web link.
 - Select a channel to play, open in another player, or favorite it. Use **Groups** and **Sources** to filter/manage the library.
 - Player controls include play/pause, seek bar, 10-second skips, live edge, audio/subtitle/video selection, fit/fill, mute, and retry. Seeking depends on the stream's DVR/seekable window. Back hides the player overlay before leaving playback.
+- Playback defaults to Stretch, filling the entire screen. The Screen button cycles Stretch, Fit, and Zoom. All player controls hide after 10 seconds without input; press the remote OK button to show them again without pausing the video.
 - In Others, select a card to open its address. Use the remote Menu button or **+ Add → Manage existing web links** to edit, reorder, pin to app Home, or delete links. The manage menu does not require a Menu key or long-press.
 - Install an external player/browser on the TV to use external actions. Some launchers and devices have no browser preinstalled.
 

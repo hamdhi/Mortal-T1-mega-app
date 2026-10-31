@@ -6,6 +6,7 @@ import android.app.AlertDialog
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
+import android.view.Gravity
 import android.view.WindowManager
 import android.widget.*
 import androidx.media3.common.*
@@ -23,6 +24,12 @@ class PlaybackActivity : ComponentActivity() {
     private lateinit var status: TextView
     private lateinit var rewind: Button
     private lateinit var forward: Button
+    private lateinit var chrome: LinearLayout
+    private var controlsVisible = false
+    private var changingControls = false
+    private var consumeOkUp = false
+    private var trackDialogOpen = false
+    private val hideControlsTask = Runnable { hideControls() }
     private var position = 0L
     private var playWhenReady = true
     private var restored = false
@@ -33,9 +40,28 @@ class PlaybackActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Ui.bg) }
-        view = PlayerView(this).apply { setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING); setShowSubtitleButton(true); setShowRewindButton(true); setShowFastForwardButton(true); controllerShowTimeoutMs = 5000 }
-        root.addView(view, LinearLayout.LayoutParams(-1, 0, 1f))
+        val root = object : FrameLayout(this) {
+            override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                val ok = event.keyCode in listOf(KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER)
+                if (ok && !controlsVisible) {
+                    if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) { consumeOkUp = true; showControls() }
+                    return true
+                }
+                if (ok && consumeOkUp) {
+                    if (event.action == KeyEvent.ACTION_UP) consumeOkUp = false
+                    return true
+                }
+                return super.dispatchKeyEvent(event)
+            }
+        }.apply { setBackgroundColor(Ui.bg) }
+        view = PlayerView(this).apply {
+            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING); setShowSubtitleButton(true)
+            setShowRewindButton(true); setShowFastForwardButton(true)
+            controllerShowTimeoutMs = 0; controllerAutoShow = false; controllerHideOnTouch = false
+            setControllerAnimationEnabled(false)
+            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+        }
+        root.addView(view, FrameLayout.LayoutParams(-1, -1))
         val bar = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
         val controls = LinearLayout(this).apply { setPadding(16, 4, 16, 4) }
         controls.addView(Ui.button(this, "‹ Back") { finish() })
@@ -44,21 +70,67 @@ class PlaybackActivity : ComponentActivity() {
         forward = Ui.button(this, "+10 sec") { player?.takeIf { it.isCurrentMediaItemSeekable }?.seekForward() }; controls.addView(forward)
         controls.addView(Ui.button(this, "Go live") { player?.takeIf { it.isCurrentMediaItemLive }?.seekToDefaultPosition() })
         controls.addView(Ui.button(this, "Tracks / quality") { tracksDialog() })
-        controls.addView(Ui.button(this, "Fit / fill") { view.resizeMode = if (view.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) AspectRatioFrameLayout.RESIZE_MODE_ZOOM else AspectRatioFrameLayout.RESIZE_MODE_FIT })
+        lateinit var screenMode: Button
+        screenMode = Ui.button(this, "Screen: Stretch") {
+            view.resizeMode = when (view.resizeMode) {
+                AspectRatioFrameLayout.RESIZE_MODE_FILL -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                AspectRatioFrameLayout.RESIZE_MODE_FIT -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                else -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            }
+            screenMode.text = "Screen: " + when (view.resizeMode) {
+                AspectRatioFrameLayout.RESIZE_MODE_FIT -> "Fit"
+                AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> "Zoom"
+                else -> "Stretch"
+            }
+        }
+        controls.addView(screenMode)
         controls.addView(Ui.button(this, "Mute") { player?.let { it.volume = if (it.volume > 0) 0f else 1f } })
         controls.addView(Ui.button(this, "Retry") { retryCount = 0; player?.prepare(); player?.play() })
-        bar.addView(controls); root.addView(bar)
-        status = Ui.label(this, intent.getStringExtra("name").orEmpty(), 12f, Ui.muted).apply { setPadding(24, 4, 24, 8) }; root.addView(status)
+        chrome = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(android.graphics.Color.argb(235, 11, 16, 25)); addView(bar) }
+        bar.addView(controls)
+        status = Ui.label(this, intent.getStringExtra("name").orEmpty(), 12f, Ui.muted).apply { setPadding(24, 4, 24, 8) }; chrome.addView(status)
+        root.addView(chrome, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        chrome.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val controller = view.findViewById<View>(androidx.media3.ui.R.id.exo_controller)
+            (controller?.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+                if (params.bottomMargin != chrome.height) { params.bottomMargin = chrome.height; controller.layoutParams = params }
+            }
+        }
         setContentView(root)
+        view.setControllerVisibilityListener(PlayerView.ControllerVisibilityListener { visibility ->
+            if (!changingControls) {
+                if (visibility == View.VISIBLE && !controlsVisible) showControls()
+                else if (visibility != View.VISIBLE && controlsVisible) hideControls()
+            }
+        })
         onBackPressedDispatcher.addCallback(this) {
-            if (view.isControllerFullyVisible) view.hideController()
+            if (controlsVisible) hideControls()
             else { isEnabled = false; onBackPressedDispatcher.onBackPressed(); isEnabled = true }
         }
         position = savedInstanceState?.getLong("position") ?: Store.get(this).position(id)
         playWhenReady = savedInstanceState?.getBoolean("play", true) ?: true
         Network.io.execute { Store.get(this).watched(id) }
     }
-    override fun onStart() { super.onStart(); startPlayer() }
+    override fun onStart() { super.onStart(); startPlayer(); showControls() }
+    private fun showControls() {
+        controlsVisible = true; chrome.visibility = View.VISIBLE
+        changingControls = true; view.showController(); changingControls = false
+        scheduleControlsHide()
+    }
+    private fun hideControls() {
+        handler.removeCallbacks(hideControlsTask)
+        controlsVisible = false; chrome.visibility = View.GONE
+        changingControls = true; view.hideController(); changingControls = false
+        view.requestFocus()
+    }
+    private fun scheduleControlsHide() {
+        handler.removeCallbacks(hideControlsTask)
+        if (!trackDialogOpen) handler.postDelayed(hideControlsTask, 10_000)
+    }
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        if (controlsVisible) scheduleControlsHide()
+    }
     private fun startPlayer() {
         if (player != null) return
         val url = intent.getStringExtra("url").orEmpty()
@@ -112,7 +184,9 @@ class PlaybackActivity : ComponentActivity() {
                 }
             }
         }
-        AlertDialog.Builder(this).setTitle("Tracks & quality").setItems(labels.toTypedArray()) { _, i -> actions[i]() }.show()
+        trackDialogOpen = true; handler.removeCallbacks(hideControlsTask)
+        AlertDialog.Builder(this).setTitle("Tracks & quality").setItems(labels.toTypedArray()) { _, i -> actions[i]() }
+            .setOnDismissListener { trackDialogOpen = false; showControls() }.show()
     }
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
             when(keyCode) {

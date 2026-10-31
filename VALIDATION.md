@@ -40,3 +40,12 @@ Requests were sent through an ADB-forwarded connection to the running emulator's
 - Non-seekable live sources, XMLTV feeds, and all track/subtitle variations have not been exhaustively exercised.
 - Complete Sri Lankan direct-stream coverage is not bundled: official browser links and user-supplied/catalog imports are available.
 - Full Android installer approval/update interaction should be checked on the actual TV. Unit checks cover identity rejection; signed APK upgrades were tested using ADB.
+
+## Player update 1.0.4
+
+- Signed build, all 14 unit tests, and lint passed (zero errors, 30 warnings).
+- Video occupies the full playback window; controls and channel status are overlays rather than a permanently reserved bottom strip.
+- After 12 seconds without input, accessibility inspection found no player buttons and a screenshot showed unobstructed video across the screen.
+- Pressing remote OK restored the controls while the media session remained PLAYING. The same input did not pause the video.
+- The restored controls showed `Screen: Stretch`, confirming the default. The Screen action also offers Fit and Zoom.
+- Controls hid again after inactivity. Controller animation is disabled, and visibility callbacks are guarded so hiding cannot immediately reopen the overlay.
