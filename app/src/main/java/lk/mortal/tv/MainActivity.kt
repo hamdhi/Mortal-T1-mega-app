@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private val vod by lazy { VodCatalog(this) }
     private val apkInbox by lazy { ApkInbox(applicationContext) }
     private var apkReviewDialog: AlertDialog? = null
+    private var openingPcInstaller = false
     private val timedRefresh = object : Runnable { override fun run() { if (prefs.getBoolean("autoRefresh", false)) refreshSources(); refreshHandler.postDelayed(this, 6 * 3600000L) } }
     private data class Card(val id: String, val title: String, val subtitle: String, val badge: String, val logo: String = "", val action: () -> Unit)
     override fun onCreate(state: Bundle?) {
@@ -80,7 +81,7 @@ class MainActivity : ComponentActivity() {
         if (state != null) { page = state.getString("page", "Home"); quality = state.getString("quality", ChannelQuality.ALL); render() }
     }
     override fun onSaveInstanceState(outState: Bundle) { outState.putString("page", page); outState.putString("quality", quality); super.onSaveInstanceState(outState) }
-    override fun onResume() { super.onResume(); if (::grid.isInitialized) { render(); savedState?.let { grid.layoutManager?.onRestoreInstanceState(it) } } }
+    override fun onResume() { super.onResume(); if (::grid.isInitialized) { render(); savedState?.let { grid.layoutManager?.onRestoreInstanceState(it) } }; window.decorView.post { openPendingPcInstaller() } }
     private fun d(n: Int) = Ui.dp(this, n)
     private fun render() {
         heading.text = when (page) { "Home" -> "Make yourself at home."; "Channels" -> "Your channels"; "Free Movies" -> "Free movie channels"; "Recent" -> "Pick up where you left off"; "Settings" -> "Settle in. Set it up."; else -> page }
@@ -267,10 +268,30 @@ class MainActivity : ComponentActivity() {
         background("Refreshing sources…") { try { var ok = 0; var failed = 0; store.sources().filter { it.url.isNotBlank() }.forEach { s -> runCatching { Network.import(store, s.name, s.url, "playlist", s.kind) }.onSuccess { ok++ }.onFailure { failed++ } }; "$ok sources refreshed · $failed failed (cached channels retained)" } finally { refreshing = false } }
     }
     private fun pcDialog() {
-        if (server == null) { try { server = ManagerServer(this, store, apkInbox) { runOnUiThread {
-            if (!isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) uploadedApkDialog()
-        } }.also { it.start(15000, false) } } catch (_: Exception) { server = null; message("PC manager unavailable", "Could not open port 8765. Restart the app and try again."); return } }
+        if (server == null) { try { server = ManagerServer(this, store, apkInbox) {
+            prefs.edit().putBoolean("pcApkInstallPending", true).apply()
+            runOnUiThread { openPendingPcInstaller() }
+        }.also { it.start(15000, false) } } catch (_: Exception) { server = null; message("PC manager unavailable", "Could not open port 8765. Restart the app and try again."); return } }
         AlertDialog.Builder(this).setTitle("Connect your PC").setMessage("${server?.address()}\n\nPairing code: ${server?.pairingCode}\n\nOpen this address on a PC on the same trusted LAN. Code expires in 15 minutes; restart management for a new code. Keep the TV app running. HTTP is not encrypted.").setPositiveButton("Done", null).setNeutralButton("Stop server") { _, _ -> server?.stop(); server = null; render() }.show()
+    }
+    private fun openPendingPcInstaller() {
+        if (isFinishing || isDestroyed || openingPcInstaller || !prefs.getBoolean("pcApkInstallPending", false) ||
+            !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
+        openingPcInstaller = true
+        Network.io.execute {
+            try {
+                val info = apkInbox.pending()
+                runOnUiThread {
+                    openingPcInstaller = false
+                    if (isFinishing || isDestroyed || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return@runOnUiThread
+                    prefs.edit().putBoolean("pcApkInstallPending", false).apply()
+                    if (info != null) { apkReviewDialog?.dismiss(); Updater(this).install(apkInbox.file, fromPc = true) }
+                }
+            } catch (e: Exception) { runOnUiThread {
+                openingPcInstaller = false; prefs.edit().putBoolean("pcApkInstallPending", false).apply()
+                if (!isFinishing && !isDestroyed) message("Could not open uploaded APK", safeError(e))
+            } }
+        }
     }
     private fun uploadedApkDialog() {
         if (apkReviewDialog?.isShowing == true) return

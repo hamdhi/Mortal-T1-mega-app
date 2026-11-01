@@ -5,6 +5,11 @@ import java.io.OutputStream
 
 object ApkTransfer {
     const val STORAGE_RESERVE = 16L * 1024 * 1024
+    const val CHUNK_BYTES = 1024 * 1024L
+    fun checkChunk(total: Long, offset: Long, actualOffset: Long, length: Long) {
+        require(offset >= 0 && offset == actualOffset && offset < total) { "Upload position changed. Refresh and retry." }
+        require(length in 1..CHUNK_BYTES && length <= total - offset) { "Invalid upload part" }
+    }
     fun checkLength(length: Long) { require(length > 0) { "Choose a non-empty APK" } }
     fun checkSpace(length: Long, available: Long) {
         checkLength(length)

@@ -27,7 +27,7 @@ class ManagerServer(private val context: Context, private val store: Store, priv
             if (s.uri == "/" && s.method == Method.GET) return reply(Response.Status.OK, context.assets.open("manager.html").bufferedReader().use { it.readText() }, "text/html; charset=utf-8")
             if (s.headers["transfer-encoding"] != null) return error(Response.Status.BAD_REQUEST, "Chunked uploads are not supported")
             val length = s.headers["content-length"]?.toLongOrNull() ?: 0
-            val apkUpload = s.uri == "/apk" && s.method == Method.POST
+            val apkUpload = s.uri in listOf("/apk", "/apk-chunk") && s.method == Method.POST
             if (length < 0 || (!apkUpload && length > Network.LIMIT)) return error(Response.Status.BAD_REQUEST, if (apkUpload) "Invalid APK length" else "Maximum request size is 8 MB")
             val origin = s.headers["origin"]
             if (origin != null && origin != "http://${s.headers["host"]}") return error(Response.Status.FORBIDDEN, "Cross-origin request blocked")
@@ -49,6 +49,11 @@ class ManagerServer(private val context: Context, private val store: Store, priv
             val token = s.headers["authorization"]?.removePrefix("Bearer ")
             if (token == null || (sessions[token] ?: 0) < System.currentTimeMillis()) return error(Response.Status.UNAUTHORIZED, "Pair with the TV first")
             if (s.uri == "/apk" && s.method == Method.GET) return reply(Response.Status.OK, JSONObject().put("apk", apkInbox.pending()?.json() ?: JSONObject.NULL).put("availableBytes", apkInbox.availableBytes()).toString())
+            if (s.uri == "/apk-upload" && s.method == Method.GET) return reply(Response.Status.OK, apkInbox.uploadState().toString())
+            if (s.uri == "/apk-chunk" && s.method == Method.POST) {
+                val offset = apkInbox.append(s.headers["x-upload-id"].orEmpty(), s.headers["x-upload-offset"]?.toLongOrNull() ?: -1, s.inputStream, length)
+                return reply(Response.Status.OK, JSONObject().put("offset", offset).toString())
+            }
             if (apkUpload) {
                 val info = apkInbox.receive(s.inputStream, length)
                 onApkReview()
@@ -62,6 +67,13 @@ class ManagerServer(private val context: Context, private val store: Store, priv
             if (s.method != Method.POST) return error(Response.Status.NOT_FOUND, "Not found")
             val b = body()
             val message = when (s.uri) {
+                "/apk-start" -> return reply(Response.Status.OK, apkInbox.begin(b.getLong("bytes")).toString())
+                "/apk-finish" -> {
+                    val info = apkInbox.finish(b.getString("uploadId")); onApkReview()
+                    return reply(Response.Status.OK, JSONObject().put("apk", info.json()).put("message", "Upload complete. Android's install prompt opens on the TV. If watching another screen, return to Mortal TV.").toString())
+                }
+                "/apk-cancel" -> { apkInbox.cancel(b.getString("uploadId")); "Upload cancelled" }
+                "/apk-delete" -> { apkInbox.remove(); "Uploaded APK and incomplete transfer deleted. Installed apps are unchanged." }
                 "/import" -> Network.import(store, b.getString("name"), b.getString("value"), b.getString("kind"), b.optString("target", "live"))
                 "/link" -> { store.putLink(b.getString("name"), b.getString("url"), b.optString("id").ifBlank { UUID.randomUUID().toString() }, b.optBoolean("home")); "Link saved" }
                 "/delete-link" -> { store.deleteLink(b.getString("id")); "Link removed" }
@@ -73,7 +85,7 @@ class ManagerServer(private val context: Context, private val store: Store, priv
             }
             return reply(Response.Status.OK, JSONObject().put("message", message).toString())
         } catch (e: Exception) {
-            val message = if (s.uri in listOf("/apk", "/apk-review")) {
+            val message = if (s.uri.startsWith("/apk")) {
                 if (e is IllegalArgumentException || e is IllegalStateException) e.message.orEmpty().take(200).ifBlank { "APK could not be read" }
                 else "APK upload failed. Check the file, storage space and connection, then retry."
             } else "Request failed. Check the input, source availability, and file size. Your previous library is retained when an import fails."
