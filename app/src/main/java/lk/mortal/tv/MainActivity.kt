@@ -38,6 +38,8 @@ class MainActivity : ComponentActivity() {
     private val refreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val epg by lazy { Epg(this) }
     private val vod by lazy { VodCatalog(this) }
+    private val apkInbox by lazy { ApkInbox(applicationContext) }
+    private var apkReviewDialog: AlertDialog? = null
     private val timedRefresh = object : Runnable { override fun run() { if (prefs.getBoolean("autoRefresh", false)) refreshSources(); refreshHandler.postDelayed(this, 6 * 3600000L) } }
     private data class Card(val id: String, val title: String, val subtitle: String, val badge: String, val logo: String = "", val action: () -> Unit)
     override fun onCreate(state: Bundle?) {
@@ -99,6 +101,7 @@ class MainActivity : ComponentActivity() {
     private fun cards(): List<Card> {
         if (page == "Settings") return listOf(
             Card("pc", "Connect your PC", server?.address() ?: "Add links without typing on a TV", "PC") { pcDialog() },
+            Card("pcapk", "APK from PC", "Review, install or remove an APK uploaded from your paired computer", "APK") { uploadedApkDialog() },
             Card("updates", "App updates", "Installed v${BuildConfig.VERSION_NAME} · ${BuildConfig.VERSION_CODE}", "↑") { updateDialog() },
             Card("install", "Install downloaded update", "Continue after allowing installs from this source", "↑") { val apk = cacheDir.resolve("updates/mortal-tv.apk"); if (apk.exists()) Updater(this).install(apk) else toast("Download an update first") },
             Card("backup", "Export backup", "Save your library to a USB drive or document provider", "↓") { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mortal-tv-backup.json"), 102) },
@@ -264,8 +267,32 @@ class MainActivity : ComponentActivity() {
         background("Refreshing sources…") { try { var ok = 0; var failed = 0; store.sources().filter { it.url.isNotBlank() }.forEach { s -> runCatching { Network.import(store, s.name, s.url, "playlist", s.kind) }.onSuccess { ok++ }.onFailure { failed++ } }; "$ok sources refreshed · $failed failed (cached channels retained)" } finally { refreshing = false } }
     }
     private fun pcDialog() {
-        if (server == null) { try { server = ManagerServer(this, store).also { it.start(15000, false) } } catch (_: Exception) { server = null; message("PC manager unavailable", "Could not open port 8765. Restart the app and try again."); return } }
+        if (server == null) { try { server = ManagerServer(this, store, apkInbox) { runOnUiThread {
+            if (!isFinishing && !isDestroyed && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) uploadedApkDialog()
+        } }.also { it.start(15000, false) } } catch (_: Exception) { server = null; message("PC manager unavailable", "Could not open port 8765. Restart the app and try again."); return } }
         AlertDialog.Builder(this).setTitle("Connect your PC").setMessage("${server?.address()}\n\nPairing code: ${server?.pairingCode}\n\nOpen this address on a PC on the same trusted LAN. Code expires in 15 minutes; restart management for a new code. Keep the TV app running. HTTP is not encrypted.").setPositiveButton("Done", null).setNeutralButton("Stop server") { _, _ -> server?.stop(); server = null; render() }.show()
+    }
+    private fun uploadedApkDialog() {
+        if (apkReviewDialog?.isShowing == true) return
+        Network.io.execute {
+            try {
+                val info = apkInbox.pending()
+                runOnUiThread {
+                    if (isFinishing || isDestroyed || apkReviewDialog?.isShowing == true) return@runOnUiThread
+                    if (info == null) { message("APK from PC", "No uploaded APK. Open Connect your PC, pair in your browser, and choose Upload APK. Standalone .apk files are supported, limited by available TV storage."); return@runOnUiThread }
+                    apkReviewDialog = AlertDialog.Builder(this).setTitle("APK from PC: ${info.name}")
+                        .setMessage("${info.packageName}\nVersion ${info.version} (${info.code})\n${info.size / (1024 * 1024)} MB\n\nOnly install an APK from a publisher you trust. Android checks final compatibility and asks for confirmation. Uploading does not install it automatically.")
+                        .setPositiveButton("Install") { _, _ -> background("Checking APK…") {
+                            require(apkInbox.pending() == info) { "The uploaded APK changed. Review it again." }
+                            runOnUiThread { Updater(this).install(apkInbox.file, fromPc = true) }; "Opening Android installer"
+                        } }
+                        .setNegativeButton("Later", null)
+                        .setNeutralButton("Remove APK") { _, _ -> AlertDialog.Builder(this).setTitle("Remove uploaded APK?").setMessage("This removes the uploaded file, not the installed app.")
+                            .setNegativeButton("Cancel", null).setPositiveButton("Remove") { _, _ -> background("Removing APK…") { apkInbox.remove(); "Uploaded APK removed" } }.show() }
+                        .setOnDismissListener { apkReviewDialog = null }.show()
+                }
+            } catch (e: Exception) { runOnUiThread { AlertDialog.Builder(this).setTitle("APK could not be read").setMessage(safeError(e)).setPositiveButton("Remove file") { _, _ -> background("Removing APK…") { apkInbox.remove(); "Uploaded APK removed" } }.setNegativeButton("Close", null).show() } }
+        }
     }
     private fun catalogDialog() = form("Refresh Sri Lankan catalog", listOf("HTTPS M3U catalog URL" to prefs.getString("catalog", "").orEmpty())) { v -> background("Refreshing catalog…") { require(v[0].startsWith("https://")) { "Use an HTTPS M3U URL" }; val result = Network.import(store, "Sri Lankan TV", v[0], "playlist"); prefs.edit().putString("catalog", v[0]).apply(); result } }
     private fun updateDialog() {

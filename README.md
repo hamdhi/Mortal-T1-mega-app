@@ -50,7 +50,15 @@ The catalog is bundled from `catalog/vod.json`; **Settings → Refresh free movi
 
 The TV app must remain running; force-stopping it stops the server. Guest Wi-Fi/client isolation or a firewall may prevent access. The pairing code expires in 15 minutes and sessions in one hour. Restart management for a new code. Five failed pairing attempts per minute are allowed per client.
 
-This is a local HTTP server: pairing restricts access but does not encrypt traffic. Use a trusted LAN, never port-forward it, and protect backups because stream URLs may contain tokens. Uploads are limited to 8 MB. JSON requests, origin checks, authorization headers, and lack of cross-origin permission protect state-changing endpoints from ordinary cross-site requests.
+This is a local HTTP server: pairing restricts access but does not encrypt traffic. Use a trusted LAN, never port-forward it, and protect backups because stream URLs may contain tokens. Playlist/backup JSON requests are limited to 8 MB. APK uploads stream directly to disk without a fixed size cap, limited by available TV storage with a 16 MB reserve. Origin checks, authorization headers, restricted content types, and lack of cross-origin permission protect state-changing endpoints from ordinary cross-site requests.
+
+### Upload and install an APK
+
+After pairing, choose a standalone `.apk` in **Upload APK to your TV**, then **Upload APK**. The page shows progress, cancellation, available storage, and the received app's package/version. Keep Mortal TV running. Bundles such as `.apks`, `.xapk`, or `.aab` are not supported. One APK can wait at a time; remove it before sending another.
+
+Review the app name, package, and version on the TV, then choose **Install** to open Android's installer. You can also choose **Show install prompt on TV** on the PC or **Settings → APK from PC** on the TV. If required, enable **Allow from this source** for Mortal TV, return, and choose Install again. Android requires TV confirmation and may reject incompatible APKs or signature/version conflicts; upload success does not mean installation success. Install only APKs from publishers you trust. Mortal TV APKs must match the existing signing certificate and cannot be older than the installed version.
+
+**Later** keeps the file in app cache for another attempt. **Remove APK** deletes the transfer file after confirmation without uninstalling any app. Interrupted/invalid uploads are discarded. Android can clear cached files when space is low; upload again if necessary. The manager stops when the app closes, and installation may require additional space beyond the transferred APK.
 
 Importing under the same source name replaces only that source after successful parsing. Empty/failed refreshes retain the prior catalog. Renaming an existing source is intentionally restricted to protect channel identity; add a new named source and delete the old one if required.
 

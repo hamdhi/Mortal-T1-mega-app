@@ -67,3 +67,13 @@ Requests were sent through an ADB-forwarded connection to the running emulator's
 - D-pad/OK selected 1080p, producing a clear no-match state for the unlabeled fixture library. Scrolled the dialog to its final options with D-pad and selected Unknown; all three unlabeled live fixture channels reappeared.
 - Returning from playback retained Unknown. Changing the destination to VOD reset the selection to All. Actual Mortal T1/Bluetooth remote verification remains outstanding.
 - List quality comes from playlist labels, not stream probing. SD and Unknown remain separate; service/browser cards are excluded while a quality filter is active. The player still controls actual available adaptive renditions.
+
+## Paired PC APK upload update 1.0.7
+
+- Signed release build, all 35 tests, and lint passed (zero errors, 34 warnings). The PC page JavaScript passed a syntax check. Eight new tests cover bounded-memory streaming, truncated input, invalid lengths, space/reserve checks without integer overflow, large declared sizes, and self-update certificate/version rules.
+- APK uploads have no fixed size cap. Available storage minus a 16 MB reserve is enforced, using 64-bit lengths. Unit tests accept a 5 GB length with sufficient space; an actual multi-gigabyte APK was not transferred.
+- Against the emulator's real paired server: unauthenticated upload returned 401, cross-origin upload returned 403, and invalid APK input returned 400. An interrupted request left no pending APK. A second upload was rejected while an APK was already pending.
+- Uploaded the 5,428,983-byte signed 1.0.7 APK. The TV displayed Mortal TV, package `lk.mortal.tv`, and version/code 1.0.7/1007. The TV Install action opened Android's package installer, which asked for Update confirmation and then reported **App installed**.
+- Reopened Mortal TV after installation, paired again, and compared the persisted library against its pre-upload export: unchanged. The older previously published Mortal TV APK was rejected with an older-version error.
+- Used D-pad/OK to open Remove APK and confirm removal; Settings then reported no uploaded APK. The installed app remained available.
+- The served PC page includes Upload APK, storage availability, progress/cancel controls, and Show install prompt on TV. Upload transport and installation were exercised through HTTP and native UI; browser-specific progress/cancel rendering and Mortal T1 hardware behavior still need device/browser checks. Android controls final compatibility and installation approval; no silent installation is claimed.

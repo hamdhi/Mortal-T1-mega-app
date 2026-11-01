@@ -56,11 +56,11 @@ class Updater(private val activity: Activity) {
         val updateCerts = if (android.os.Build.VERSION.SDK_INT >= 28) archive.signingInfo?.apkContentsSigners else archive.signatures
         UpdatePolicy.verifyPackage(activity.packageName, archive.packageName.orEmpty(), BuildConfig.VERSION_CODE.toLong(), code.toLong(), archiveCode, currentCerts.orEmpty().map { it.toCharsString() }.toSet(), updateCerts.orEmpty().map { it.toCharsString() }.toSet())
     }
-    fun install(file: File) {
+    fun install(file: File, fromPc: Boolean = false) {
         if (!activity.packageManager.canRequestPackageInstalls()) {
-            AlertDialog.Builder(activity).setTitle("Allow app updates").setMessage("Enable 'Allow from this source' for Mortal TV, then return and select Install downloaded update.")
+            AlertDialog.Builder(activity).setTitle(if (fromPc) "Allow APK installation" else "Allow app updates").setMessage("Enable 'Allow from this source' for Mortal TV, then return and select " + if (fromPc) "Settings > APK from PC > Install." else "Install downloaded update.")
                 .setPositiveButton("Open permission settings") { _, _ -> activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}"))) }
-                .setNeutralButton("Install downloaded update") { _, _ -> install(file) }.setNegativeButton("Later", null).show(); return
+                .setNegativeButton("Later", null).show(); return
         }
         try { val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.files", file); activity.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
         catch (_: Exception) { AlertDialog.Builder(activity).setMessage("Android could not open its package installer.").setPositiveButton("OK", null).show() }

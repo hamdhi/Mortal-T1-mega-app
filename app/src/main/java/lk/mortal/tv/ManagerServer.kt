@@ -8,7 +8,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
 
-class ManagerServer(private val context: Context, private val store: Store) : NanoHTTPD(8765) {
+class ManagerServer(private val context: Context, private val store: Store, private val apkInbox: ApkInbox, private val onApkReview: () -> Unit) : NanoHTTPD(8765) {
     val pairingCode: String = (100000 + SecureRandom().nextInt(900000)).toString()
     private val sessions = ConcurrentHashMap<String, Long>()
     private val attempts = ConcurrentHashMap<String, Pair<Long, Int>>()
@@ -27,10 +27,11 @@ class ManagerServer(private val context: Context, private val store: Store) : Na
             if (s.uri == "/" && s.method == Method.GET) return reply(Response.Status.OK, context.assets.open("manager.html").bufferedReader().use { it.readText() }, "text/html; charset=utf-8")
             if (s.headers["transfer-encoding"] != null) return error(Response.Status.BAD_REQUEST, "Chunked uploads are not supported")
             val length = s.headers["content-length"]?.toLongOrNull() ?: 0
-            if (length < 0 || length > Network.LIMIT) return error(Response.Status.BAD_REQUEST, "Maximum request size is 8 MB")
+            val apkUpload = s.uri == "/apk" && s.method == Method.POST
+            if (length < 0 || (!apkUpload && length > Network.LIMIT)) return error(Response.Status.BAD_REQUEST, if (apkUpload) "Invalid APK length" else "Maximum request size is 8 MB")
             val origin = s.headers["origin"]
             if (origin != null && origin != "http://${s.headers["host"]}") return error(Response.Status.FORBIDDEN, "Cross-origin request blocked")
-            if (s.method == Method.POST && s.headers["content-type"]?.startsWith("application/json") != true) return error(Response.Status.BAD_REQUEST, "JSON required")
+            if (s.method == Method.POST && s.headers["content-type"]?.startsWith(if (apkUpload) "application/octet-stream" else "application/json") != true) return error(Response.Status.BAD_REQUEST, if (apkUpload) "Send the APK as application/octet-stream" else "JSON required")
             fun body(): JSONObject {
                 val bytes = ByteArray(length.toInt()); var n = 0
                 while (n < bytes.size) { val count = s.inputStream.read(bytes, n, bytes.size - n); require(count > 0); n += count }
@@ -47,6 +48,16 @@ class ManagerServer(private val context: Context, private val store: Store) : Na
             }
             val token = s.headers["authorization"]?.removePrefix("Bearer ")
             if (token == null || (sessions[token] ?: 0) < System.currentTimeMillis()) return error(Response.Status.UNAUTHORIZED, "Pair with the TV first")
+            if (s.uri == "/apk" && s.method == Method.GET) return reply(Response.Status.OK, JSONObject().put("apk", apkInbox.pending()?.json() ?: JSONObject.NULL).put("availableBytes", apkInbox.availableBytes()).toString())
+            if (apkUpload) {
+                val info = apkInbox.receive(s.inputStream, length)
+                onApkReview()
+                return reply(Response.Status.OK, JSONObject().put("apk", info.json()).put("message", "APK received. Review it on the TV and choose Install. Android confirmation is required.").toString())
+            }
+            if (s.uri == "/apk-review" && s.method == Method.POST) {
+                require(apkInbox.pending() != null) { "Upload an APK first" }; onApkReview()
+                return reply(Response.Status.OK, JSONObject().put("message", "Review the APK on your TV, or open Settings > APK from PC.").toString())
+            }
             if (s.method == Method.GET && s.uri == "/library") return reply(Response.Status.OK, store.export())
             if (s.method != Method.POST) return error(Response.Status.NOT_FOUND, "Not found")
             val b = body()
@@ -61,6 +72,12 @@ class ManagerServer(private val context: Context, private val store: Store) : Na
                 else -> return error(Response.Status.NOT_FOUND, "Not found")
             }
             return reply(Response.Status.OK, JSONObject().put("message", message).toString())
-        } catch (_: Exception) { return error(Response.Status.BAD_REQUEST, "Request failed. Check the input, source availability, and file size. Your previous library is retained when an import fails.") }
+        } catch (e: Exception) {
+            val message = if (s.uri in listOf("/apk", "/apk-review")) {
+                if (e is IllegalArgumentException || e is IllegalStateException) e.message.orEmpty().take(200).ifBlank { "APK could not be read" }
+                else "APK upload failed. Check the file, storage space and connection, then retry."
+            } else "Request failed. Check the input, source availability, and file size. Your previous library is retained when an import fails."
+            return error(Response.Status.BAD_REQUEST, message)
+        }
     }
 }
